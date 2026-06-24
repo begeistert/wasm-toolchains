@@ -77,12 +77,23 @@ const emitVfs = (vfsPath, bytes) => { const r = 'vfs' + vfsPath; if (!fs.existsS
 
 const manifest = { tools: [], isystem: '', boards: {} };
 
-// Shared tools (each .js loads its sidecar .wasm by the build-internal name:
-// arm-as.js->as-new.wasm, arm-ld.js->ld-new.wasm).
-for (const t of ['cc1plus.js', 'cc1plus.wasm', 'arm-as.js', 'as-new.wasm',
-  'arm-ld.js', 'ld-new.wasm', 'objcopy.js', 'objcopy.wasm']) {
-  const src = path.join(DIST_ARM, t);
-  if (fs.existsSync(src)) manifest.tools.push(emit(path.join('tools', t), rd(src)));
+// Shared tools, as [shippedName, sourceNameInDistArm]. Each .js loads its sidecar
+// .wasm by the build-internal name (arm-as.js -> as-new.wasm, arm-ld.js ->
+// ld-new.wasm), but src/arm-gcc/build.sh installs those .wasm renamed to
+// arm-as.wasm / arm-ld.wasm. Ship them under the name the JS loader requests,
+// sourcing from whichever name the build produced (fall back to the shipped name).
+const TOOLS = [
+  ['cc1plus.js', 'cc1plus.js'],  ['cc1plus.wasm', 'cc1plus.wasm'],
+  ['arm-as.js', 'arm-as.js'],    ['as-new.wasm', 'arm-as.wasm'],
+  ['arm-ld.js', 'arm-ld.js'],    ['ld-new.wasm', 'arm-ld.wasm'],
+  ['objcopy.js', 'objcopy.js'],  ['objcopy.wasm', 'objcopy.wasm'],
+];
+for (const [shipped, srcName] of TOOLS) {
+  let src = path.join(DIST_ARM, srcName);
+  if (!fs.existsSync(src) && srcName !== shipped) src = path.join(DIST_ARM, shipped);
+  if (!fs.existsSync(src))
+    throw new Error(`make-pico-dist: missing tool ${shipped} (looked for ${srcName} in ${DIST_ARM})`);
+  manifest.tools.push(emit(path.join('tools', shipped), rd(src)));
 }
 // Shared C++ -isystem list (toolchain-fixed, same multilib for both boards).
 manifest.isystem = emit('templates/isystem.txt', rd(ISYSTEM));
