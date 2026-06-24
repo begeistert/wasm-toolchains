@@ -1,35 +1,25 @@
-name: Release
+name: Release AVR
 
-# Unified build + release pipeline for every WASM toolchain this repo ships.
+# Builds and publishes the AVR toolchain bundle (avrwasm).
 #
-#   Phase A (builds, parallel, gha-cached):
-#     build-gas / build-binutils / build-avr-ld  — the AVR binutils (.js)
-#     build-avr-gcc                              — the AVR compiler (cc1/cc1plus/lto1)
-#     build-arm-gcc                              — the ARM (RP2040/RP2350) toolchain
-#   Phase B (bundles):
-#     bundle-avr   — merge the AVR tools, run make-web-dist → dist-web, validate, …
-#     bundle-pico  — picocap harvest → dist-pico-web, verify flash-identical (blocking)
-#   Phase C (release, tags only):
-#     release      — make-catalog over the SAME run's bundles → catalog.json + tars,
-#                    published to the GitHub Release. No cross-release fetch, so the
-#                    catalog never references a stale/missing avrwasm.tar.
+#   build-gas / build-binutils / build-avr-ld  — the AVR binutils (.js)
+#   build-avr-gcc                              — the AVR compiler (cc1/cc1plus/lto1)
+#   bundle-avr                                 — make-web-dist → dist-web, validated
+#   release                                    — catalog.json + avrwasm.tar → AVR Release
 #
-# Runs ONLY on version tags (full build → publish a Release) and on manual
-# workflow_dispatch (full build + validation, without publishing). It never runs
-# on ordinary branch pushes or pull requests. The ARM toolchain build is ~hours
-# but gha-cached. The library index lives in its own cron workflow
-# (scan-libraries.yml).
+# Runs ONLY on `avr-v*` tags (full build → publish) and manual workflow_dispatch
+# (build + validate, no publish). The ARM/Pico toolchain has its own workflow
+# (release-pico.yml); the library index has its own cron (scan-libraries.yml).
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["avr-v*"]
   workflow_dispatch:
 
 env:
   BINUTILS_BRANCH: binutils-2_45-branch
 
 jobs:
-  # ── Phase A: AVR binutils (fast — run everywhere as a smoke test) ──────────
   build-gas:
     runs-on: ubuntu-latest
     permissions: { contents: read }
@@ -91,7 +81,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: avr-ld, path: dist-avr-ld/ }
 
-  # ── Phase A: heavy compilers (dispatch + tags only) ───────────────────────
   build-avr-gcc:
     runs-on: ubuntu-latest
     permissions: { contents: read }
@@ -111,26 +100,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: avr-gcc, path: dist-avr-gcc/ }
 
-  build-arm-gcc:
-    runs-on: ubuntu-latest
-    permissions: { contents: read }
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
-      - uses: crazy-max/ghaction-github-runtime@v3
-      - name: Build cc1plus + binutils (arm-none-eabi → WASM)
-        run: |
-          docker buildx build --progress=plain \
-            --cache-to=type=gha,mode=max,scope=arm-gcc \
-            --cache-from=type=gha,scope=arm-gcc \
-            --output=type=local,dest=dist-arm-gcc \
-            src/arm-gcc
-      - name: Sanity-check tools
-        run: for t in cc1plus.js arm-as.js arm-ld.js objcopy.js; do test -s "dist-arm-gcc/$t"; done
-      - uses: actions/upload-artifact@v4
-        with: { name: dist-arm-gcc, path: dist-arm-gcc/ }
-
-  # ── Phase B: AVR web bundle (dist-web → avrwasm) ──────────────────────────
   bundle-avr:
     runs-on: ubuntu-latest
     needs: [build-gas, build-binutils, build-avr-ld, build-avr-gcc]
@@ -157,31 +126,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: dist-web, path: dist-web/ }
 
-  # ── Phase B: Pico bundle (dist-pico-web → picowasm) ───────────────────────
-  bundle-pico:
-    runs-on: ubuntu-latest
-    needs: [build-arm-gcc]
-    permissions: { contents: read }
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - uses: actions/download-artifact@v4
-        with: { name: dist-arm-gcc, path: dist-arm-gcc/ }
-      - name: Build picocap harvest image (arduino-cli + arduino-pico + Tier-1 libs)
-        run: docker build -t picocap:latest src/picocap
-      - name: Harvest + build the multi-board bundle
-        run: node tools/pico-wasm/harvest.cjs dist-pico-web
-      - name: Verify flash-identical to native + library sketches link
-        run: node tools/pico-wasm/verify-pico.cjs dist-pico-web
-      - uses: actions/upload-artifact@v4
-        with: { name: dist-pico-web, path: dist-pico-web/ }
-
-  # ── Phase C: catalog + Release (tags only) ────────────────────────────────
   release:
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'avr-v')
     runs-on: ubuntu-latest
-    needs: [bundle-avr, bundle-pico]
+    needs: [bundle-avr]
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v5
@@ -189,8 +137,6 @@ jobs:
         with: { node-version: 20 }
       - uses: actions/download-artifact@v4
         with: { name: dist-web, path: dist-web/ }
-      - uses: actions/download-artifact@v4
-        with: { name: dist-pico-web, path: dist-pico-web/ }
       - name: Fetch latest library index
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
@@ -198,11 +144,30 @@ jobs:
           gh release download library-index --pattern 'header-lib-map.json' \
             -O tools/lib-index/header-lib-map.json || \
             echo "::warning::no library-index release yet — catalog will omit header-lib-map"
-      - name: Assemble catalog + tarballs
-        run: node tools/dist/make-catalog.cjs "${GITHUB_REF_NAME#v}" dist-release
+      - name: Assemble catalog + tarball
+        run: |
+          node tools/dist/make-catalog.cjs "${GITHUB_REF_NAME#avr-v}" dist-release \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
       - name: Publish to Release
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
-            gh release create "${{ github.ref_name }}" --generate-notes
-          gh release upload "${{ github.ref_name }}" dist-release/* --clobber
+          ver="${GITHUB_REF_NAME#avr-v}"
+          notes=$(cat <<EOF
+          ## wasm-toolchains — AVR $ver
+
+          WebAssembly build of the AVR GNU toolchain — \`avr-as\`, \`avr-ld\`, binutils,
+          and the compiler proper \`cc1\`/\`cc1plus\`/\`lto1\` (GCC 15.2) — plus the Arduino
+          core and bundled libraries. Compile Arduino sketches to Intel HEX in a browser,
+          WKWebView, or Node.js.
+
+          ### Assets
+          - \`avrwasm.tar\` — the \`dist-web\` bundle (tools, per-board sysroot, Arduino core, libraries, \`manifest.json\`)
+          - \`header-lib-map.json\` — header→library index for automatic library resolution
+          - \`catalog.json\` — versioned manifest (per-asset URL + sha256 + size)
+
+          See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md).
+          EOF
+          )
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" --title "AVR $ver" --notes "$notes"
+          gh release upload "${GITHUB_REF_NAME}" dist-release/* --clobber

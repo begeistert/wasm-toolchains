@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-06-24
 
-First public release. WebAssembly builds of the AVR and ARM (RP2040/RP2350)
-GNU toolchains, plus the orchestration and distribution tooling to compile a real
-Arduino sketch to firmware entirely in a browser, WKWebView, or Node.js.
+First public release, shipped as two GitHub Releases — **`avr-v1.0.0`** (AVR
+toolchain) and **`pico-v1.0.0`** (ARM/Pico toolchain). WebAssembly builds of the
+AVR and ARM (RP2040/RP2350) GNU toolchains, plus the orchestration and
+distribution tooling to compile a real Arduino sketch to firmware entirely in a
+browser, WKWebView, or Node.js.
 
 ### Added
 
@@ -33,9 +35,11 @@ Arduino sketch to firmware entirely in a browser, WKWebView, or Node.js.
 - **Distribution catalog** (`tools/dist/make-catalog.cjs` → `catalog.json`): a
   versioned manifest with per-bundle URL + `sha256` + size for a host app to
   download, verify and cache.
-- **Unified CI** (`.github/workflows/release.yml`): builds every toolchain,
-  assembles and validates both bundles, and on a `v*` tag publishes the catalog +
-  tarballs to the GitHub Release from a single run.
+- **CI** — two independent release tracks: `.github/workflows/release-avr.yml`
+  (tags `avr-v*` → AVR Release with `avrwasm.tar` + `header-lib-map.json` +
+  `catalog.json`) and `.github/workflows/release-pico.yml` (tags `pico-v*` → Pico
+  Release with `picowasm.tar` + `catalog.json`). Each validates its bundle before
+  publishing and runs only on its own tag (or manual dispatch).
 - **Library index cron** (`.github/workflows/scan-libraries.yml`): weekly refresh
   of the header→library map to a rolling `library-index` release.
 - **Examples**: `examples/arduino-web` (browser host) and
@@ -49,4 +53,4 @@ Arduino sketch to firmware entirely in a browser, WKWebView, or Node.js.
   Releases, kept at arm's length from any consuming app. See
   [`docs/LICENSING.md`](docs/LICENSING.md).
 
-[1.0.0]: https://github.com/begeistert/wasm-toolchains/releases/tag/v1.0.0
+[1.0.0]: https://github.com/begeistert/wasm-toolchains/releases/tag/avr-v1.0.0

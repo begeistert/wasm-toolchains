@@ -59,13 +59,25 @@ runs are incremental. The map powers automatic resolution: the compiler's
 
 ## Workflows
 
-- `.github/workflows/release.yml` — the unified build + release pipeline. Builds
-  every toolchain (AVR binutils, `avr-gcc`, `arm-gcc`), assembles `dist-web`
-  (`make-web-dist.cjs`) and `dist-pico-web` (`harvest.cjs`), validates each, then
-  on a `v*` tag runs `make-catalog.cjs` over **the same run's** bundles and
-  publishes `catalog.json` + the tarballs to the Release. **Triggers: version tags
-  only** (full build → publish) and manual `workflow_dispatch` (full build +
-  validation, no publish). It does not run on branch pushes or pull requests.
+There are **two independent release tracks**, one per toolchain, so AVR and Pico
+version and publish separately (no need to rebuild the ~hours Pico toolchain to
+ship an AVR fix):
+
+- `.github/workflows/release-avr.yml` — builds the AVR binutils + `avr-gcc`,
+  assembles `dist-web` (`make-web-dist.cjs`), validates it by compiling a real
+  sketch, then on an **`avr-v*`** tag runs `make-catalog.cjs` and publishes
+  `avrwasm.tar` + `header-lib-map.json` + `catalog.json` to the **AVR Release**.
+- `.github/workflows/release-pico.yml` — builds `arm-gcc`, harvests
+  `dist-pico-web` (`harvest.cjs`), verifies flash-identical to native, then on a
+  **`pico-v*`** tag publishes `picowasm.tar` + `catalog.json` to the **Pico
+  Release**.
+
+Both run **only on their tag** (full build → publish) and on manual
+`workflow_dispatch` (build + validate, no publish); never on branch pushes or PRs.
+Tag scheme: `avr-vX.Y.Z` and `pico-vX.Y.Z` (SemVer per toolchain). Each release's
+`catalog.json` lists only that toolchain's assets, with URLs pointing at its own
+release tag.
+
 - `.github/workflows/scan-libraries.yml` — weekly cron (Mon 06:00 UTC) +
   `workflow_dispatch` → header→library map → rolling `library-index` release
-  (fetched by the `release` job for the catalog).
+  (fetched by the AVR `release` job for its catalog).

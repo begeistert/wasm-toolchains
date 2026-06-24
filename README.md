@@ -50,7 +50,10 @@ node tools/pico-wasm/harvest.cjs dist-pico-web
 node tools/pico-wasm/verify-pico.cjs dist-pico-web
 ```
 
-CI does all of this in [`.github/workflows/release.yml`](.github/workflows/release.yml).
+CI does all of this in two independent release tracks —
+[`release-avr.yml`](.github/workflows/release-avr.yml) (tags `avr-v*`) and
+[`release-pico.yml`](.github/workflows/release-pico.yml) (tags `pico-v*`) — each
+publishing its own GitHub Release.
 
 ## Compiling a sketch (Node harness)
 

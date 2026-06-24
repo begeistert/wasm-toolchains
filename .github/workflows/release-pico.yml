@@ -1,0 +1,94 @@
+name: Release Pico
+
+# Builds and publishes the ARM/Pico toolchain bundle (picowasm) for RP2040/RP2350.
+#
+#   build-arm-gcc — cc1plus + arm-as/arm-ld/objcopy (arm-none-eabi → WASM)
+#   bundle-pico   — picocap harvest → dist-pico-web, verify flash-identical (blocking)
+#   release       — catalog.json + picowasm.tar → Pico Release
+#
+# Runs ONLY on `pico-v*` tags (full build → publish) and manual workflow_dispatch
+# (build + validate, no publish). The ARM toolchain build is ~hours but gha-cached.
+# The AVR toolchain has its own workflow (release-avr.yml).
+
+on:
+  push:
+    tags: ["pico-v*"]
+  workflow_dispatch:
+
+jobs:
+  build-arm-gcc:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build cc1plus + binutils (arm-none-eabi → WASM)
+        run: |
+          docker buildx build --progress=plain \
+            --cache-to=type=gha,mode=max,scope=arm-gcc \
+            --cache-from=type=gha,scope=arm-gcc \
+            --output=type=local,dest=dist-arm-gcc \
+            src/arm-gcc
+      - name: Sanity-check tools
+        run: for t in cc1plus.js arm-as.js arm-ld.js objcopy.js; do test -s "dist-arm-gcc/$t"; done
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-arm-gcc, path: dist-arm-gcc/ }
+
+  bundle-pico:
+    runs-on: ubuntu-latest
+    needs: [build-arm-gcc]
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-arm-gcc, path: dist-arm-gcc/ }
+      - name: Build picocap harvest image (arduino-cli + arduino-pico + Tier-1 libs)
+        run: docker build -t picocap:latest src/picocap
+      - name: Harvest + build the multi-board bundle
+        run: node tools/pico-wasm/harvest.cjs dist-pico-web
+      - name: Verify flash-identical to native + library sketches link
+        run: node tools/pico-wasm/verify-pico.cjs dist-pico-web
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-pico-web, path: dist-pico-web/ }
+
+  release:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'pico-v')
+    runs-on: ubuntu-latest
+    needs: [bundle-pico]
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-pico-web, path: dist-pico-web/ }
+      - name: Assemble catalog + tarball
+        run: |
+          node tools/dist/make-catalog.cjs "${GITHUB_REF_NAME#pico-v}" dist-release \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+      - name: Publish to Release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          ver="${GITHUB_REF_NAME#pico-v}"
+          notes=$(cat <<EOF
+          ## wasm-toolchains — Pico $ver
+
+          WebAssembly build of the ARM (RP2040/RP2350) GNU toolchain — \`cc1plus\`,
+          \`arm-as\`, \`arm-ld\`, \`objcopy\` (GCC 14.3) — with the multi-board link inputs and
+          header closures harvested from arduino-pico. Boards: \`pico\`, \`pico2\`, \`pico_w\`,
+          \`pico2w\`. Compile Pico sketches to UF2 in a browser, WKWebView, or Node.js.
+
+          ### Assets
+          - \`picowasm.tar\` — the \`dist-pico-web\` bundle (tools, per-board templates + vfs, \`manifest.json\`)
+          - \`catalog.json\` — versioned manifest (per-asset URL + sha256 + size)
+
+          Verified flash-identical to a native \`arduino-cli\` build. See
+          [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md).
+          EOF
+          )
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" --title "Pico $ver" --notes "$notes"
+          gh release upload "${GITHUB_REF_NAME}" dist-release/* --clobber
