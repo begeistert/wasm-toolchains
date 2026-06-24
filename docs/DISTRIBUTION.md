@@ -63,8 +63,9 @@ runs are incremental. The map powers automatic resolution: the compiler's
   every toolchain (AVR binutils, `avr-gcc`, `arm-gcc`), assembles `dist-web`
   (`make-web-dist.cjs`) and `dist-pico-web` (`harvest.cjs`), validates each, then
   on a `v*` tag runs `make-catalog.cjs` over **the same run's** bundles and
-  publishes `catalog.json` + the tarballs to the Release. The light binutils
-  builds run on every push/PR as a smoke test; the heavy compiler builds + bundles
-  run on `workflow_dispatch` and tags.
-- `.github/workflows/scan-libraries.yml` — weekly cron → header→library map →
-  rolling `library-index` release (fetched by the `release` job for the catalog).
+  publishes `catalog.json` + the tarballs to the Release. **Triggers: version tags
+  only** (full build → publish) and manual `workflow_dispatch` (full build +
+  validation, no publish). It does not run on branch pushes or pull requests.
+- `.github/workflows/scan-libraries.yml` — weekly cron (Mon 06:00 UTC) +
+  `workflow_dispatch` → header→library map → rolling `library-index` release
+  (fetched by the `release` job for the catalog).

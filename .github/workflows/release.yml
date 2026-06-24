@@ -14,19 +14,15 @@ name: Release
 #                    published to the GitHub Release. No cross-release fetch, so the
 #                    catalog never references a stale/missing avrwasm.tar.
 #
-# The light binutils builds run on every push/PR as a smoke test; the heavy
-# compiler builds + bundles run on workflow_dispatch and version tags (the ARM
-# toolchain build is ~hours but gha-cached). The library index lives in its own
-# cron workflow (scan-libraries.yml).
+# Runs ONLY on version tags (full build → publish a Release) and on manual
+# workflow_dispatch (full build + validation, without publishing). It never runs
+# on ordinary branch pushes or pull requests. The ARM toolchain build is ~hours
+# but gha-cached. The library index lives in its own cron workflow
+# (scan-libraries.yml).
 
 on:
   push:
     tags: ["v*"]
-    branches-ignore:
-      - "renovate/**"
-      - "dependabot/**"
-  pull_request:
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 env:
@@ -97,7 +93,6 @@ jobs:
 
   # ── Phase A: heavy compilers (dispatch + tags only) ───────────────────────
   build-avr-gcc:
-    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions: { contents: read }
     steps:
@@ -117,7 +112,6 @@ jobs:
         with: { name: avr-gcc, path: dist-avr-gcc/ }
 
   build-arm-gcc:
-    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions: { contents: read }
     steps:
@@ -138,7 +132,6 @@ jobs:
 
   # ── Phase B: AVR web bundle (dist-web → avrwasm) ──────────────────────────
   bundle-avr:
-    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     needs: [build-gas, build-binutils, build-avr-ld, build-avr-gcc]
     permissions: { contents: read }
@@ -166,7 +159,6 @@ jobs:
 
   # ── Phase B: Pico bundle (dist-pico-web → picowasm) ───────────────────────
   bundle-pico:
-    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     needs: [build-arm-gcc]
     permissions: { contents: read }
