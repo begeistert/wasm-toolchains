@@ -127,7 +127,12 @@ async function closure(key, isys) {
   for (const [key, { tag }] of Object.entries(BOARDS)) {
     pickBlocks(key, tag);
     const n = await closure(key, isys);
-    fs.copyFileSync(path.join(WORK, `Big-${tag}-native.uf2`), path.join(WORK, `Big-${key}-native.uf2`));
+    // Expose the native reference uf2 under the board *key* verify-pico expects.
+    // Only needed when key != tag (e.g. pico_w vs picow); when they match the file
+    // is already correctly named — and copying it onto itself would fail (the file
+    // is owned by root inside the harvest container, so the runner can't rewrite it).
+    if (key !== tag)
+      fs.copyFileSync(path.join(WORK, `Big-${tag}-native.uf2`), path.join(WORK, `Big-${key}-native.uf2`));
     console.log(`closure ${key}: ${n} headers`);
   }
   console.log('\n=== make-pico-dist ===');
