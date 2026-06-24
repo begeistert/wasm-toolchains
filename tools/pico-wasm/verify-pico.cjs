@@ -10,8 +10,10 @@ const fs = require('fs');
 const path = require('path');
 
 // The shipped bundle to verify. Defaults to the repo's dist-pico-web; a host app
-// embedding a copy can point here via argv or the DIST env var.
-const DIST = process.argv[2] || process.env.DIST || path.resolve(__dirname, '../../dist-pico-web');
+// embedding a copy can point here via argv or the DIST env var. Resolve to an
+// absolute path so the require()s below work regardless of cwd (require treats a
+// bare relative path as a module name, not a file).
+const DIST = path.resolve(process.argv[2] || process.env.DIST || path.join(__dirname, '../../dist-pico-web'));
 // recipe-pico.js is canonical here (the toolchain repo); a host app that ships a
 // copy alongside its bundle should keep them in sync. Override with RECIPE if needed.
 const R = require(process.env.RECIPE || path.join(__dirname, 'recipe-pico.js'));
