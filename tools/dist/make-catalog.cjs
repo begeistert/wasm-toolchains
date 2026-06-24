@@ -21,11 +21,14 @@ const AVR = path.resolve(__dirname, '..', '..');
 fs.mkdirSync(STAGE, { recursive: true });
 const sha256 = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 
-// Bundles to publish: id -> source dir (a web bundle) or file.
+// Bundles to publish: id -> source dir (a web bundle). Only the pinned, versioned
+// toolchains belong in a release catalog. The header→library map is intentionally
+// NOT here: it changes weekly (Arduino library ecosystem) and ships via its own
+// rolling `library-index` release, which the host app reads directly — pinning a
+// rolling artifact's sha256 in a versioned catalog would only go stale.
 const BUNDLES = [
   { id: 'avr-toolchain',  dir: path.join(AVR, 'dist-web'),       tar: 'avrwasm.tar' },
   { id: 'pico-toolchain', dir: path.join(AVR, 'dist-pico-web'),  tar: 'picowasm.tar' },
-  { id: 'header-lib-map', file: path.join(AVR, 'tools/lib-index/header-lib-map.json'), tar: 'header-lib-map.json' },
 ];
 
 const entries = [];

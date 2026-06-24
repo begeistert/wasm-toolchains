@@ -36,10 +36,12 @@ browser, WKWebView, or Node.js.
   versioned manifest with per-bundle URL + `sha256` + size for a host app to
   download, verify and cache.
 - **CI** — two independent release tracks: `.github/workflows/release-avr.yml`
-  (tags `avr-v*` → AVR Release with `avrwasm.tar` + `header-lib-map.json` +
-  `catalog.json`) and `.github/workflows/release-pico.yml` (tags `pico-v*` → Pico
-  Release with `picowasm.tar` + `catalog.json`). Each validates its bundle before
-  publishing and runs only on its own tag (or manual dispatch).
+  (tags `avr-v*` → AVR Release with `avrwasm.tar` + `catalog.json`) and
+  `.github/workflows/release-pico.yml` (tags `pico-v*` → Pico Release with
+  `picowasm.tar` + `catalog.json`). Each validates its bundle before publishing and
+  runs only on its own tag (or manual dispatch). The header→library map ships
+  separately via the rolling `library-index` release (weekly cron), decoupled from
+  the pinned toolchain versions.
 - **Library index cron** (`.github/workflows/scan-libraries.yml`): weekly refresh
   of the header→library map to a rolling `library-index` release.
 - **Examples**: `examples/arduino-web` (browser host) and

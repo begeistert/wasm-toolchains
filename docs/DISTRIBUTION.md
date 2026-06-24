@@ -12,14 +12,20 @@ fetched at arm's length, never linked into the proprietary app (see
 
 | Artifact | Produced by | Shipped as |
 |---|---|---|
-| AVR toolchain bundle (`dist-web/`) | `tools/arduino-wasm/make-web-dist.cjs` | `avrwasm.tar` |
-| Pico toolchain + Tier-1 libs (`dist-pico-web/`) | `tools/pico-wasm/harvest.cjs` → `make-pico-dist.cjs` | `picowasm.tar` |
-| header→library map | `tools/lib-index/scan-libraries.cjs` | `header-lib-map.json` |
-| `catalog.json` | `tools/dist/make-catalog.cjs` | the manifest the host app reads |
+| AVR toolchain bundle (`dist-web/`) | `tools/arduino-wasm/make-web-dist.cjs` | `avrwasm.tar` (AVR Release) |
+| Pico toolchain + Tier-1 libs (`dist-pico-web/`) | `tools/pico-wasm/harvest.cjs` → `make-pico-dist.cjs` | `picowasm.tar` (Pico Release) |
+| `catalog.json` | `tools/dist/make-catalog.cjs` | the manifest the host app reads (per toolchain Release) |
+| header→library map | `tools/lib-index/scan-libraries.cjs` | `header-lib-map.json` (rolling `library-index` Release) |
 
-`catalog.json` lists each bundle with a URL + `sha256` + size; the host app fetches it,
-downloads what it needs, verifies the hash, and caches. Bump the version and
-re-release to push a toolchain update **without an App Store release**.
+`catalog.json` lists the toolchain bundle with a URL + `sha256` + size; the host app
+fetches it, downloads what it needs, verifies the hash, and caches. Bump the version
+and re-release to push a toolchain update **without an App Store release**.
+
+The **header→library map is intentionally not in the toolchain catalogs**: it
+changes weekly (the Arduino library ecosystem), so it ships via its own *rolling*
+`library-index` Release that the host app reads directly — always fresh, decoupled
+from the pinned toolchain versions. Pinning a rolling artifact's hash in a versioned
+catalog would only go stale.
 
 ## Building the Pico bundle locally
 
@@ -79,5 +85,6 @@ Tag scheme: `avr-vX.Y.Z` and `pico-vX.Y.Z` (SemVer per toolchain). Each release'
 release tag.
 
 - `.github/workflows/scan-libraries.yml` — weekly cron (Mon 06:00 UTC) +
-  `workflow_dispatch` → header→library map → rolling `library-index` release
-  (fetched by the AVR `release` job for its catalog).
+  `workflow_dispatch` → header→library map → rolling `library-index` release. The
+  host app reads this directly for automatic library resolution; it is deliberately
+  not bundled into the pinned toolchain catalogs.

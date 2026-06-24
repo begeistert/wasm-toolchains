@@ -137,13 +137,6 @@ jobs:
         with: { node-version: 20 }
       - uses: actions/download-artifact@v4
         with: { name: dist-web, path: dist-web/ }
-      - name: Fetch latest library index
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: |
-          mkdir -p tools/lib-index
-          gh release download library-index --pattern 'header-lib-map.json' \
-            -O tools/lib-index/header-lib-map.json || \
-            echo "::warning::no library-index release yet — catalog will omit header-lib-map"
       - name: Assemble catalog + tarball
         run: |
           node tools/dist/make-catalog.cjs "${GITHUB_REF_NAME#avr-v}" dist-release \
@@ -162,8 +155,11 @@ jobs:
 
           ### Assets
           - \`avrwasm.tar\` — the \`dist-web\` bundle (tools, per-board sysroot, Arduino core, libraries, \`manifest.json\`)
-          - \`header-lib-map.json\` — header→library index for automatic library resolution
           - \`catalog.json\` — versioned manifest (per-asset URL + sha256 + size)
+
+          For automatic library resolution, the host app reads \`header-lib-map.json\`
+          from the rolling [\`library-index\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/library-index)
+          release (refreshed weekly), independent of this pinned toolchain release.
 
           See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md).
           EOF
