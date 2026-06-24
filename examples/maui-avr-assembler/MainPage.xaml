@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="MauiAvrAssembler.MainPage"
+             Title="AVR Assembler">
+
+    <Grid Padding="16" RowSpacing="12" RowDefinitions="*,Auto,*,Auto">
+
+        <!-- Assembly source input -->
+        <Border Grid.Row="0" Stroke="{DynamicResource Primary}" StrokeThickness="1" Padding="0">
+            <Editor x:Name="SourceEditor"
+                    AutoSize="Disabled"
+                    FontFamily="Courier New"
+                    FontSize="14"
+                    Placeholder="Type AVR assembly source here…" />
+        </Border>
+
+        <!-- Toolbar -->
+        <HorizontalStackLayout Grid.Row="1" Spacing="8">
+            <Picker x:Name="DevicePicker" Title="Device" WidthRequest="200" />
+            <Button x:Name="CompileButton"
+                    Text="Compile"
+                    Clicked="OnCompileClicked" />
+            <ActivityIndicator x:Name="BusyIndicator"
+                               IsRunning="False"
+                               IsVisible="False"
+                               VerticalOptions="Center" />
+        </HorizontalStackLayout>
+
+        <!-- HEX / log output -->
+        <Border Grid.Row="2" Stroke="{DynamicResource Primary}" StrokeThickness="1" Padding="0">
+            <ScrollView>
+                <Label x:Name="OutputLabel"
+                       FontFamily="Courier New"
+                       FontSize="12"
+                       Padding="8" />
+            </ScrollView>
+        </Border>
+
+        <!--
+            HybridWebView hosts the JS pipeline.  HybridRoot points at
+            the Resources/Raw/arduinowasm folder which contains index.html,
+            arduino-pipeline.js and the dist-web tools + sysroot.
+            The control is invisible — the UI lives in MAUI; the WebView
+            is purely a JavaScript runtime the C# layer talks to via
+            InvokeJavaScriptAsync / RawMessage callbacks.
+        -->
+        <!-- Visible + non-zero size: a zero-frame WKWebView may not run JS on
+             Mac Catalyst, so we give it a real (small) frame. -->
+        <HybridWebView x:Name="ToolHost"
+                       Grid.Row="3"
+                       HeightRequest="60"
+                       IsVisible="True"
+                       HybridRoot="arduinowasm"
+                       RawMessageReceived="OnHybridRawMessage" />
+
+    </Grid>
+
+</ContentPage>

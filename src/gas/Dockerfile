@@ -10,7 +10,7 @@ RUN git clone --depth 1 --branch ${BRANCH} git://sourceware.org/git/binutils-gdb
 
 WORKDIR /src
 COPY ./build.sh /src/build.sh
-RUN ./build.sh /dist
+RUN chmod +x /src/build.sh && ./build.sh /dist
 
 FROM scratch AS export
 COPY --from=builder /dist/ /

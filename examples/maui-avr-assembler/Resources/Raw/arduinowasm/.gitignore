@@ -1,0 +1,5 @@
+# Compiler bundle (downloaded from the GitHub Release as avrwasm.tar, or copied
+# from a local `make-web-dist.cjs` build). Kept out of git — see this folder's
+# parent README, step 1. The provided host files (index.html, arduino-pipeline.js)
+# stay tracked.
+dist-web/

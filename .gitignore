@@ -1,2 +1,27 @@
 node_modules/
 dist/
+.DS_Store
+# IDE / editor state
+.idea/
+*.DotSettings.user
+# Build outputs (large; produced by `docker buildx build ... src/avr-gcc` and
+# `node tools/arduino-wasm/make-web-dist.cjs`). Ship via Releases, not git.
+# dist-gas / dist-binutils / dist-avr-ld are CI-only merge inputs for dist-avr-gcc.
+dist-gas/
+dist-binutils/
+dist-avr-ld/
+dist-avr-gcc/
+dist-web/
+# Pico toolchain + bundle + release staging + generated library map + deep-scan
+# cache. All produced by the workflows; shipped via Releases, not git.
+dist-arm-gcc/
+dist-pico-web/
+dist-release/
+.libscan-cache/
+tools/lib-index/header-lib-map.json
+# .NET build artifacts of the validator
+tools/arduino-wasm/Avr8Validate/bin/
+tools/arduino-wasm/Avr8Validate/obj/
+# .NET build artifacts of the MAUI example
+examples/maui-avr-assembler/bin/
+examples/maui-avr-assembler/obj/

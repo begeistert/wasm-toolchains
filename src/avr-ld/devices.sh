@@ -23,8 +23,8 @@
 #   4. Append a new entry below following the same format.
 #
 DEVICES=(
-  "arduino-uno:atmega328p:avr5:crtm328p.o"
-  "arduino-nano:atmega328p:avr5:crtm328p.o"
-  "arduino-mega:atmega2560:avr6:crtm2560.o"
-  "attiny85:attiny85:avr25:crtt85.o"
+  "arduino-uno:atmega328p:avr5:crtatmega328p.o"
+  "arduino-nano:atmega328p:avr5:crtatmega328p.o"
+  "arduino-mega:atmega2560:avr6:crtatmega2560.o"
+  "attiny85:attiny85:avr25:crtattiny85.o"
 )

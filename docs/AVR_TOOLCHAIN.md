@@ -26,10 +26,10 @@ Download them from the [Releases page](../../releases/latest) or run the [Build 
 
 | Board | MCU | `-mmcu` flag | avr-libc arch | CRT object | LD emulation |
 |-------|-----|---|---|---|---|
-| Arduino UNO | ATmega328P | `atmega328p` | `avr5` | `crtm328p.o` | `avr5` |
-| Arduino NANO | ATmega328P | `atmega328p` | `avr5` | `crtm328p.o` | `avr5` |
-| Arduino MEGA | ATmega2560 | `atmega2560` | `avr6` | `crtm2560.o` | `avr6` |
-| ATtiny85 | ATtiny85 | `attiny85` | `avr25` | `crtt85.o` | `avr25` |
+| Arduino UNO | ATmega328P | `atmega328p` | `avr5` | `crtatmega328p.o` | `avr5` |
+| Arduino NANO | ATmega328P | `atmega328p` | `avr5` | `crtatmega328p.o` | `avr5` |
+| Arduino MEGA | ATmega2560 | `atmega2560` | `avr6` | `crtatmega2560.o` | `avr6` |
+| ATtiny85 | ATtiny85 | `attiny85` | `avr25` | `crtattiny85.o` | `avr25` |
 
 ---
 
@@ -103,7 +103,7 @@ exist in the virtual filesystem automatically.
 ```js
 const archFamily = "avr5";               // from the device table above
 const ldEmulation = "avr5";
-const crtObject  = "crtm328p.o";
+const crtObject  = "crtatmega328p.o";
 const libDir     = `/usr/lib/avr/lib/${archFamily}`;
 
 const ld = await createAvrLd({
@@ -174,7 +174,7 @@ arguments: [
 
    ```bash
    DEVICES=(
-     "arduino-uno:atmega328p:avr5:crtm328p.o"
+     "arduino-uno:atmega328p:avr5:crtatmega328p.o"
      # ...
      "atmega1284p:atmega1284p:avr51:crtm1284p.o"   # ← new
    )

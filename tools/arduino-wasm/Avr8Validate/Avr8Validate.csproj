@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Avr8Validate</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Validate produced HEX on the real AVR-8 simulator (the same engine
+         that backs iCircuit / Avr8Sharp). -->
+    <ProjectReference Include="/Users/begeistert/Repos/avr8sharp/src/Avr8Sharp.TestKit/Avr8Sharp.TestKit.csproj" />
+  </ItemGroup>
+
+</Project>
