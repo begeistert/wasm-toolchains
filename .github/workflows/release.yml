@@ -1,0 +1,216 @@
+name: Release
+
+# Unified build + release pipeline for every WASM toolchain this repo ships.
+#
+#   Phase A (builds, parallel, gha-cached):
+#     build-gas / build-binutils / build-avr-ld  — the AVR binutils (.js)
+#     build-avr-gcc                              — the AVR compiler (cc1/cc1plus/lto1)
+#     build-arm-gcc                              — the ARM (RP2040/RP2350) toolchain
+#   Phase B (bundles):
+#     bundle-avr   — merge the AVR tools, run make-web-dist → dist-web, validate, …
+#     bundle-pico  — picocap harvest → dist-pico-web, verify flash-identical (blocking)
+#   Phase C (release, tags only):
+#     release      — make-catalog over the SAME run's bundles → catalog.json + tars,
+#                    published to the GitHub Release. No cross-release fetch, so the
+#                    catalog never references a stale/missing avrwasm.tar.
+#
+# The light binutils builds run on every push/PR as a smoke test; the heavy
+# compiler builds + bundles run on workflow_dispatch and version tags (the ARM
+# toolchain build is ~hours but gha-cached). The library index lives in its own
+# cron workflow (scan-libraries.yml).
+
+on:
+  push:
+    tags: ["v*"]
+    branches-ignore:
+      - "renovate/**"
+      - "dependabot/**"
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+env:
+  BINUTILS_BRANCH: binutils-2_45-branch
+
+jobs:
+  # ── Phase A: AVR binutils (fast — run everywhere as a smoke test) ──────────
+  build-gas:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build avr-as
+        run: |
+          docker buildx build --progress=plain \
+            --build-arg=BRANCH=${{ env.BINUTILS_BRANCH }} \
+            --cache-to=type=gha,mode=max,scope=gas \
+            --cache-from=type=gha,scope=gas \
+            --output=type=local,dest=dist-gas \
+            src/gas
+      - run: test -s dist-gas/avr-as.js
+      - uses: actions/upload-artifact@v4
+        with: { name: avr-as, path: dist-gas/ }
+
+  build-binutils:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build binutils
+        run: |
+          docker buildx build --progress=plain \
+            --build-arg=BRANCH=${{ env.BINUTILS_BRANCH }} \
+            --cache-to=type=gha,mode=max,scope=binutils \
+            --cache-from=type=gha,scope=binutils \
+            --output=type=local,dest=dist-binutils \
+            src/binutils
+      - name: Verify binutils output
+        run: |
+          for tool in addr2line ar cxxfilt elfedit nm objcopy objdump ranlib readelf size strings strip; do
+            test -s "dist-binutils/${tool}.js"
+          done
+      - uses: actions/upload-artifact@v4
+        with: { name: binutils, path: dist-binutils/ }
+
+  build-avr-ld:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build avr-ld
+        run: |
+          docker buildx build --progress=plain \
+            --build-arg=BRANCH=${{ env.BINUTILS_BRANCH }} \
+            --cache-to=type=gha,mode=max,scope=avr-ld \
+            --cache-from=type=gha,scope=avr-ld \
+            --output=type=local,dest=dist-avr-ld \
+            src/avr-ld
+      - run: test -s dist-avr-ld/avr-ld.js
+      - uses: actions/upload-artifact@v4
+        with: { name: avr-ld, path: dist-avr-ld/ }
+
+  # ── Phase A: heavy compilers (dispatch + tags only) ───────────────────────
+  build-avr-gcc:
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build cc1/cc1plus/lto1 (avr-gcc → WASM)
+        run: |
+          docker buildx build --progress=plain \
+            --cache-to=type=gha,mode=max,scope=avr-gcc \
+            --cache-from=type=gha,scope=avr-gcc \
+            --output=type=local,dest=dist-avr-gcc \
+            src/avr-gcc
+      - name: Sanity-check tools
+        run: for t in cc1.js cc1plus.js lto1.js; do test -s "dist-avr-gcc/$t"; done
+      - uses: actions/upload-artifact@v4
+        with: { name: avr-gcc, path: dist-avr-gcc/ }
+
+  build-arm-gcc:
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build cc1plus + binutils (arm-none-eabi → WASM)
+        run: |
+          docker buildx build --progress=plain \
+            --cache-to=type=gha,mode=max,scope=arm-gcc \
+            --cache-from=type=gha,scope=arm-gcc \
+            --output=type=local,dest=dist-arm-gcc \
+            src/arm-gcc
+      - name: Sanity-check tools
+        run: for t in cc1plus.js arm-as.js arm-ld.js objcopy.js; do test -s "dist-arm-gcc/$t"; done
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-arm-gcc, path: dist-arm-gcc/ }
+
+  # ── Phase B: AVR web bundle (dist-web → avrwasm) ──────────────────────────
+  bundle-avr:
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    needs: [build-gas, build-binutils, build-avr-ld, build-avr-gcc]
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      # Merge the binutils tools + the compiler/sysroot into the single dir
+      # make-web-dist.cjs expects (see tools/arduino-wasm/make-web-dist.cjs).
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-avr-gcc/
+          pattern: "{avr-as,binutils,avr-ld,avr-gcc}"
+          merge-multiple: true
+      - name: Assemble web bundle
+        run: node tools/arduino-wasm/make-web-dist.cjs
+      - name: Validate — compile a real sketch with the WASM toolchain
+        run: |
+          node tools/arduino-wasm/build-sketch.cjs dist-avr-gcc src/arduino-core uno \
+            examples/sketches/HelloSerial/HelloSerial.ino /tmp/out.hex
+          test -s /tmp/out.hex
+          head -c 1 /tmp/out.hex | grep -q ':'   # Intel HEX starts with ':'
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-web, path: dist-web/ }
+
+  # ── Phase B: Pico bundle (dist-pico-web → picowasm) ───────────────────────
+  bundle-pico:
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    needs: [build-arm-gcc]
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-arm-gcc, path: dist-arm-gcc/ }
+      - name: Build picocap harvest image (arduino-cli + arduino-pico + Tier-1 libs)
+        run: docker build -t picocap:latest src/picocap
+      - name: Harvest + build the multi-board bundle
+        run: node tools/pico-wasm/harvest.cjs dist-pico-web
+      - name: Verify flash-identical to native + library sketches link
+        run: node tools/pico-wasm/verify-pico.cjs dist-pico-web
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-pico-web, path: dist-pico-web/ }
+
+  # ── Phase C: catalog + Release (tags only) ────────────────────────────────
+  release:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    needs: [bundle-avr, bundle-pico]
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-web, path: dist-web/ }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-pico-web, path: dist-pico-web/ }
+      - name: Fetch latest library index
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p tools/lib-index
+          gh release download library-index --pattern 'header-lib-map.json' \
+            -O tools/lib-index/header-lib-map.json || \
+            echo "::warning::no library-index release yet — catalog will omit header-lib-map"
+      - name: Assemble catalog + tarballs
+        run: node tools/dist/make-catalog.cjs "${GITHUB_REF_NAME#v}" dist-release
+      - name: Publish to Release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
+            gh release create "${{ github.ref_name }}" --generate-notes
+          gh release upload "${{ github.ref_name }}" dist-release/* --clobber

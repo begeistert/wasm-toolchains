@@ -1,0 +1,51 @@
+name: Scan Libraries
+
+# Cron job: rebuild the header -> library map from the Arduino Library Manager
+# index so automatic on-device library resolution can find arbitrary libraries.
+# Publishes header-lib-map.json to the rolling "library-index" release, which
+# the host app downloads + caches. The deep-scan cache is restored between runs so
+# each run only fetches libraries whose version changed (incremental).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"     # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      deep:
+        description: "Download libraries lacking providesIncludes (slower, fuller)"
+        type: boolean
+        default: true
+
+permissions: { contents: write }
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Restore deep-scan cache
+        uses: actions/cache@v4
+        with:
+          path: .libscan-cache
+          key: libscan-${{ github.run_id }}
+          restore-keys: libscan-
+
+      - name: Build header -> library map
+        env:
+          CACHE_DIR: .libscan-cache
+          MAX_DEEP: "1500"        # cap downloads per run; cache makes it incremental
+        run: |
+          node tools/lib-index/scan-libraries.cjs tools/lib-index/header-lib-map.json \
+            ${{ (github.event_name == 'schedule' || inputs.deep) && '--deep' || '' }}
+
+      - name: Publish to rolling library-index release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh release view library-index >/dev/null 2>&1 || \
+            gh release create library-index --title "Library index" \
+              --notes "Rolling header→library map for on-device library resolution." --latest=false
+          gh release upload library-index tools/lib-index/header-lib-map.json --clobber

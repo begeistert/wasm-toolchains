@@ -1,5 +1,0 @@
-# avr-wasm runtime artifacts (downloaded from the GitHub Release).
-avr-as.js
-avr-ld.js
-objcopy.js
-avr-libc/

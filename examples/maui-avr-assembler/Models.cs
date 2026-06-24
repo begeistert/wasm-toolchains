@@ -2,12 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace MauiAvrAssembler;
 
-/// <summary>Payload sent from C# to <c>window.compile</c> in pipeline.js.</summary>
+/// <summary>Payload sent from C# to <c>window.compile</c> (arduino-pipeline.js).
+/// The JS recipe owns the board table, so the host only sends the sketch
+/// source and a board key ("uno" / "nano" / "mega").</summary>
 public sealed record CompileRequest(
     [property: JsonPropertyName("source")] string Source,
-    [property: JsonPropertyName("mcu")]    string Mcu,
-    [property: JsonPropertyName("arch")]   string Arch,
-    [property: JsonPropertyName("crt")]    string Crt);
+    [property: JsonPropertyName("board")]  string Board);
 
 /// <summary>Result returned by <c>window.compile</c>.</summary>
 public sealed record CompileResult(
@@ -23,6 +23,7 @@ public sealed record CompileResult(
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(CompileRequest))]
 [JsonSerializable(typeof(CompileResult))]
+[JsonSerializable(typeof(string))]
 public partial class JsonContext : JsonSerializerContext
 {
 }

@@ -39,17 +39,19 @@
 
         <!--
             HybridWebView hosts the JS pipeline.  HybridRoot points at
-            the Resources/Raw/avrwasm folder which contains index.html,
-            pipeline.js and the avr-wasm tools + avr-libc sidecar.
+            the Resources/Raw/arduinowasm folder which contains index.html,
+            arduino-pipeline.js and the dist-web tools + sysroot.
             The control is invisible — the UI lives in MAUI; the WebView
             is purely a JavaScript runtime the C# layer talks to via
             InvokeJavaScriptAsync / RawMessage callbacks.
         -->
+        <!-- Visible + non-zero size: a zero-frame WKWebView may not run JS on
+             Mac Catalyst, so we give it a real (small) frame. -->
         <HybridWebView x:Name="ToolHost"
                        Grid.Row="3"
-                       HeightRequest="1"
-                       IsVisible="False"
-                       HybridRoot="avrwasm"
+                       HeightRequest="60"
+                       IsVisible="True"
+                       HybridRoot="arduinowasm"
                        RawMessageReceived="OnHybridRawMessage" />
 
     </Grid>

@@ -1,81 +1,89 @@
-# avr-wasm
+# wasm-toolchains
 
-AVR GNU Assembler (`avr-as`), Linker (`avr-ld` + avr-libc), and Binutils (`objcopy`, `objdump`, …) compiled to WebAssembly using [Emscripten](https://emscripten.org/).
+Embedded GNU toolchains — the AVR and ARM (RP2040/RP2350) compilers, assemblers,
+linkers and binutils — compiled to **WebAssembly** with [Emscripten](https://emscripten.org/),
+so a real Arduino sketch can be compiled to firmware **entirely in a browser,
+WKWebView, or Node.js**, with no native toolchain installed.
 
-Each tool is a self-contained `.js` file with the WASM binary embedded — no separate `.wasm` file, no server, no native AVR toolchain required.
+Each tool is an Emscripten module (`.js` loader + `.wasm`, or a single-file `.js`)
+driven through a data interface (argv + a virtual filesystem). A small JS
+orchestrator chains them the way `arduino-cli` / the gcc driver would —
+`.ino → cc1plus → as → ld → objcopy → .hex/.uf2` — because a browser has no
+`fork`/`exec`.
 
-## Outputs
+## What's here
 
-| File | Description |
-|------|-------------|
-| `avr-as.js` | GNU Assembler for AVR — assembles `.s` → `.o` |
-| `avr-ld.js` | GNU Linker for AVR — links `.o` → `.elf` |
-| `avr-libc/<arch>/…` | C runtime objects (`crt*.o`) and archives (`libc.a`, `libm.a`) the linker needs at runtime, shipped as a sidecar tree alongside `avr-ld.js` |
-| `objcopy.js` | Converts `.elf` → Intel HEX (`.hex`) |
-| `objdump.js` | Disassembles / inspects ELF binaries |
-| `nm.js`, `readelf.js`, `size.js`, … | Additional binutils tools |
+| Toolchain | Source | Targets | Output bundle |
+|-----------|--------|---------|---------------|
+| **AVR** | `src/gas`, `src/binutils`, `src/avr-ld`, `src/avr-gcc` (GCC 15.2) | Uno/Nano (ATmega328P), Mega (ATmega2560), ATtiny85 | `dist-web/` → `avrwasm.tar` |
+| **ARM/Pico** | `src/arm-gcc` (GCC 14.3) + `src/picocap` harvest | RP2040/RP2350 (`pico`, `pico2`, `pico_w`, `pico2w`) | `dist-pico-web/` → `picowasm.tar` |
 
-## Getting the files
+Plus the Arduino core (`src/arduino-core`), bundled libraries (`libraries/`), a
+weekly **library index** (`tools/lib-index` → `header-lib-map.json`) for automatic
+on-device library resolution, and a versioned **catalog** (`tools/dist/make-catalog.cjs`
+→ `catalog.json`) a host app reads to download + verify + cache the bundles.
 
-**Latest release:** download individual `.js` files from the [Releases page](../../releases/latest).
+## Distribution
 
-**Build manually:** trigger the [Build workflow](../../actions/workflows/build.yml) via *Run workflow* — the compiled files are saved as a workflow artifact.
+Everything ships as **runtime-downloaded blobs via GitHub Releases**, not bundled
+in the consuming app — this keeps the ~200 MB of GPL toolchains out of the app and
+keeps the GPLv3 gcc/binutils at arm's length from proprietary hosts. See
+[`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) and [`docs/LICENSING.md`](docs/LICENSING.md).
 
-## Usage
+## Building locally
 
-Each file exposes an Emscripten module factory (`Module()`). Load the `.js` file in any JavaScript environment (browser, WKWebView, Node.js) and call `Module()` to get an instance with a virtual filesystem.
+Docker + Node are the only dependencies.
 
-See [`docs/AVR_TOOLCHAIN.md`](docs/AVR_TOOLCHAIN.md) for a full end-to-end guide covering the `.s → .o → .elf → .hex` pipeline.
+```bash
+# AVR toolchain
+docker buildx build --output=type=local,dest=dist-gas       src/gas
+docker buildx build --output=type=local,dest=dist-binutils  src/binutils
+docker buildx build --output=type=local,dest=dist-avr-ld    src/avr-ld
+docker buildx build --output=type=local,dest=dist-avr-gcc   src/avr-gcc   # heavy (~hours)
+# merge the binutils tools into dist-avr-gcc/, then:
+node tools/arduino-wasm/make-web-dist.cjs                                  # -> dist-web/
 
-## Supported devices (avr-ld)
+# ARM/Pico toolchain
+docker buildx build --output=type=local,dest=dist-arm-gcc   src/arm-gcc   # heavy (~hours)
+docker build -t picocap:latest src/picocap
+node tools/pico-wasm/harvest.cjs dist-pico-web
+node tools/pico-wasm/verify-pico.cjs dist-pico-web
+```
+
+CI does all of this in [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+## Compiling a sketch (Node harness)
+
+```bash
+node tools/arduino-wasm/build-sketch.cjs dist-avr-gcc src/arduino-core uno \
+     examples/sketches/HelloSerial/HelloSerial.ino out.hex
+```
+
+The produced HEX is validated on the AVR-8 simulator via
+`tools/arduino-wasm/Avr8Validate`.
+
+## Supported AVR devices
 
 | Label | MCU | avr-libc arch family |
 |-------|-----|----------------------|
-| `arduino-uno` | ATmega328P | avr5 |
-| `arduino-nano` | ATmega328P | avr5 |
+| `arduino-uno` / `arduino-nano` | ATmega328P | avr5 |
 | `arduino-mega` | ATmega2560 | avr6 |
 | `attiny85` | ATtiny85 | avr25 |
 
-To add more devices edit [`src/avr-ld/devices.sh`](src/avr-ld/devices.sh) (one line per device) and rebuild.
+To add more, edit [`src/avr-ld/devices.sh`](src/avr-ld/devices.sh) and the board
+table in [`tools/arduino-wasm/recipe.js`](tools/arduino-wasm/recipe.js), then rebuild.
 
 ## Examples
 
 | Path | Description |
 |------|-------------|
-| [`examples/maui-avr-assembler`](examples/maui-avr-assembler) | .NET 9 MAUI app (iOS / Mac Catalyst / Android) that takes an assembly string, runs the full `.s → .o → .elf → .hex` pipeline inside a `HybridWebView`, and shows the resulting Intel HEX. |
-
-## Repository layout
-
-```
-src/
-  gas/          Dockerfile + build.sh → avr-as.js
-  binutils/     Dockerfile + build.sh → objcopy.js, objdump.js, …
-  avr-ld/       Dockerfile + build.sh + devices.sh → avr-ld.js + avr-libc/
-examples/
-  maui-avr-assembler/  Cross-platform MAUI app showcasing the toolchain
-docs/
-  AVR_TOOLCHAIN.md     End-to-end pipeline tutorial
-  DESKTOP_AND_MAUI.md  Hosting the tools in Node.js or a MAUI WebView
-```
-
-## Building locally
-
-Docker is the only dependency.
-
-```bash
-# avr-as
-docker buildx build --output=type=local,dest=dist src/gas
-
-# binutils (objcopy, objdump, …)
-docker buildx build --output=type=local,dest=dist src/binutils
-
-# avr-ld + avr-libc
-docker buildx build --output=type=local,dest=dist src/avr-ld
-```
-
-Compiled `.js` files appear in `dist/`.
+| [`examples/arduino-web`](examples/arduino-web) | Browser host — loads the WASM factories + `recipe.js` and exposes `window.compileArduino({ source, board, libraries })`. |
+| [`examples/maui-avr-assembler`](examples/maui-avr-assembler) | .NET MAUI app (iOS / Mac Catalyst / Android) running the full pipeline inside a `HybridWebView`. |
 
 ## License
 
-GPL-3.0-or-later — in accordance with the license of GNU Binutils.
+GPL-3.0-or-later — in accordance with the license of GNU Binutils / GCC.
 
+The host-side example apps are separate: `examples/maui-avr-assembler` is
+**MIT-licensed** (it drives the toolchain at arm's length and ships no GPL
+compiler code). See [`docs/LICENSING.md`](docs/LICENSING.md).

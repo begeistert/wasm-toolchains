@@ -2,12 +2,10 @@
 
 	<PropertyGroup>
 		<!--
-			Targets a representative subset of MAUI platforms with a
-			particular focus on iOS, which the example is designed for.
-			Add `net9.0-windows10.0.19041.0` to this list if you also
-			need a WebView2-backed Windows build.
+			Focused local setup for macOS (Apple Silicon) diagnostics.
 		-->
-		<TargetFrameworks>net9.0-ios;net9.0-maccatalyst;net9.0-android</TargetFrameworks>
+		<TargetFramework>net10.0-maccatalyst</TargetFramework>
+		<RuntimeIdentifier>maccatalyst-arm64</RuntimeIdentifier>
 
 		<OutputType>Exe</OutputType>
 		<RootNamespace>MauiAvrAssembler</RootNamespace>
@@ -16,14 +14,12 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
-		<ApplicationTitle>AVR Assembler</ApplicationTitle>
+		<ApplicationTitle>MauiAvrAssembler</ApplicationTitle>
 		<ApplicationId>com.avrwasm.example.assembler</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 
-		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
-		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -32,7 +28,7 @@
 
 		<!--
 			Everything under Resources/Raw is copied verbatim into the
-			MAUI app bundle.  The avrwasm/ subfolder is what we expose
+			MAUI app bundle.  The arduinowasm/ subfolder is what we expose
 			to HybridWebView via HybridRoot.
 		-->
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />

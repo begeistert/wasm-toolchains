@@ -1,0 +1,79 @@
+#!/bin/bash
+# Build the ARM (arm-none-eabi) C/C++ compilers proper (cc1, cc1plus) AND
+# binutils (as, ld, objcopy, ar) to WebAssembly, for on-device RP2040 / Pico
+# compiling. Same approach as src/avr-gcc, target switched to arm-none-eabi and
+# GCC pinned to 14.3.0 to match the arduino-pico (Earle Philhower) pqt-gcc
+# toolchain — so the produced objects are ABI-compatible with the precompiled
+# libpico.a / libgcc / newlib we harvest from the arduino-pico install as the
+# sidecar (no native build needed here, unlike the AVR case).
+set -xe -o pipefail
+
+output_dir=${1:-/dist}
+mkdir -p "$output_dir"; output_dir=$(realpath "$output_dir")
+
+GMP_VER=${GMP_VER:-6.3.0}; MPFR_VER=${MPFR_VER:-4.2.1}; MPC_VER=${MPC_VER:-1.3.1}
+TARGET=arm-none-eabi
+build_triple=$(/src/config.guess 2>/dev/null || echo x86_64-pc-linux-gnu)
+nproc_n=$(nproc)
+wasmdeps=/opt/wasmdeps; mkdir -p "$wasmdeps"
+
+EMFLAGS="-sMODULARIZE=1 -sEXPORT_NAME=createModule \
+    -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=FS,callMain \
+    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=2GB -sSTACK_SIZE=8MB"
+# Pre-seed the ar --plugin probe (avoids emar --plugin liblto_plugin.so failure).
+_site=$(mktemp -t emscripten-site.XXXXXX)
+printf 'am_cv_ar_has_plugin=no\nam_cv_ranlib_has_plugin=no\n' > "$_site"; export CONFIG_SITE="$_site"
+export CC_FOR_BUILD=gcc CXX_FOR_BUILD=g++ HOST_CC=gcc HOST_CXX=g++
+
+# ── DEPS: GMP / MPFR / MPC → wasm32 ─────────────────────────────────────
+if [ ! -f "$wasmdeps/lib/libmpc.a" ]; then
+  cd /deps/gmp-${GMP_VER};  emconfigure ./configure --build="$build_triple" --host=wasm32 --prefix="$wasmdeps" --disable-shared --enable-static --disable-assembly CC_FOR_BUILD=gcc; emmake make -j"$nproc_n"; emmake make install
+  cd /deps/mpfr-${MPFR_VER}; emconfigure ./configure --build="$build_triple" --host=wasm32 --prefix="$wasmdeps" --disable-shared --enable-static --with-gmp="$wasmdeps" CC_FOR_BUILD=gcc; emmake make -j"$nproc_n"; emmake make install
+  cd /deps/mpc-${MPC_VER};  emconfigure ./configure --build="$build_triple" --host=wasm32 --prefix="$wasmdeps" --disable-shared --enable-static --with-gmp="$wasmdeps" --with-mpfr="$wasmdeps" CC_FOR_BUILD=gcc; emmake make -j"$nproc_n"; emmake make install
+fi
+
+# ── BINUTILS (arm-none-eabi) → WASM: as / ld / objcopy / ar ─────────────
+bu=/opt/build/binutils; mkdir -p "$bu"; cd "$bu"
+if [ ! -f "$bu/Makefile" ]; then
+  sed -i '/^development=/s/true/false/' /src-binutils/bfd/development.sh || true
+  emconfigure /src-binutils/configure --target=$TARGET --host=wasm32 --build="$build_triple" \
+    --enable-ld=default --disable-gold --disable-gdb --disable-gdbserver --disable-sim \
+    --disable-nls --disable-werror --disable-doc --disable-gprof \
+    CC_FOR_BUILD=gcc CXX_FOR_BUILD=g++ MAKEINFO=missing
+fi
+# Build the support libs + generated headers (bfd.h, etc.) first, otherwise
+# gas/ld compiles race ahead and fail with "bfd.h file not found".
+emmake make -O -j"$nproc_n" all-bfd all-libiberty all-opcodes all-libsframe \
+    "CFLAGS=-DHAVE_PSIGNAL=1 -DELIDE_CODE -Os"
+emmake make -O -j"$nproc_n" all-gas all-ld all-binutils \
+    "CFLAGS=-DHAVE_PSIGNAL=1 -DELIDE_CODE -Os" || true
+for pair in "gas/as-new:arm-as" "ld/ld-new:arm-ld" "binutils/objcopy:objcopy" "binutils/ar:ar"; do
+  src=${pair%%:*}; name=${pair##*:}
+  rm -f "$bu/$src"
+  emmake make -O -j"$nproc_n" -C "$bu/$(dirname "$src")" "CFLAGS=-DHAVE_PSIGNAL=1 -DELIDE_CODE -Os" "LDFLAGS=$EMFLAGS" "$(basename "$src")"
+  install -D "$bu/$src" "$output_dir/$name.js"
+  [ -f "$bu/$src.wasm" ] && install -D "$bu/$src.wasm" "$output_dir/$name.wasm" || true
+done
+
+# ── GCC 14.3.0 (arm-none-eabi) cc1/cc1plus → WASM (Canadian cross) ───────
+gw=/opt/build/gcc; mkdir -p "$gw"; cd "$gw"
+if [ ! -f "$gw/Makefile" ]; then
+  emconfigure /src/configure --build="$build_triple" --host=wasm32 --target=$TARGET \
+    --prefix=/opt/arm-wasm --enable-languages=c,c++ \
+    --with-gmp="$wasmdeps" --with-mpfr="$wasmdeps" --with-mpc="$wasmdeps" \
+    --disable-bootstrap --disable-shared --disable-threads --disable-nls \
+    --disable-libssp --disable-libada --disable-libquadmath --disable-libgomp \
+    --disable-libvtv --enable-lto --disable-libstdcxx --without-headers --disable-werror \
+    CC_FOR_BUILD=gcc CXX_FOR_BUILD=g++ MAKEINFO=missing
+fi
+HOSTCFLAGS="-DHAVE_PSIGNAL=1 -DELIDE_CODE -Os"
+emmake make -O -j"$nproc_n" all-gcc "CFLAGS=$HOSTCFLAGS" "CXXFLAGS=$HOSTCFLAGS" || \
+  echo "all-gcc nonzero (expected: gcov-tool ftw); continuing"
+rm -f gcc/cc1 gcc/cc1plus gcc/lto1
+emmake make -O -j"$nproc_n" -C gcc cc1 cc1plus lto1 "CFLAGS=$HOSTCFLAGS" "CXXFLAGS=$HOSTCFLAGS" "LDFLAGS=$EMFLAGS"
+for t in cc1 cc1plus lto1; do
+  install -D "gcc/$t" "$output_dir/$t.js"
+  install -D "gcc/$t.wasm" "$output_dir/$t.wasm"
+done
+
+echo "=== arm toolchain WASM built ==="; ls -lh "$output_dir"/*.js

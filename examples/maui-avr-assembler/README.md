@@ -1,8 +1,8 @@
 # MAUI AVR Assembler example
 
-A minimal **.NET 9 MAUI** app that lets you type AVR assembly, pick an
-Arduino-style target device, and compile it to an Intel HEX file
-**entirely on-device** — using the WebAssembly builds of GNU `as`,
+A minimal **.NET MAUI** app that lets you type an Arduino sketch, pick a
+target board, and compile it to an Intel HEX file **entirely on-device** —
+using the WebAssembly builds of the AVR compiler (`cc1plus`), GNU `as`,
 GNU `ld` and GNU `objcopy` from this repository.
 
 The whole toolchain runs inside MAUI's `HybridWebView` (`WKWebView` on
@@ -37,10 +37,10 @@ examples/maui-avr-assembler/
 ├── Resources/
 │   ├── AppIcon/appicon.svg
 │   ├── Splash/splash.svg
-│   └── Raw/avrwasm/
-│       ├── index.html                loads the three emscripten modules
-│       ├── pipeline.js               window.compile() — chains as → ld → objcopy
-│       ├── README.md                 explains where avr-as.js etc. must be dropped
+│   └── Raw/arduinowasm/
+│       ├── index.html                loads the WASM compiler modules + recipe
+│       ├── arduino-pipeline.js       window.compile() — chains cc1plus → as → ld → objcopy
+│       ├── dist-web/                 the compiler bundle (see step 1)
 │       └── .gitignore                excludes the binary artifacts
 └── README.md                         (this file)
 ```
@@ -57,40 +57,39 @@ examples/maui-avr-assembler/
 - **For Android**: any host plus the Android SDK installed by the
   workload.
 
-## 1.  Drop the avr-wasm artifacts into the project
+## 1.  Drop the WASM bundle into the project
 
-The `.js` modules and the `avr-libc/` sidecar are produced by the
-`Build` GitHub Actions workflow at the root of this repository and
-attached to every release.  From inside this example folder:
+The compiler bundle (`dist-web/`: the tool `.js`/`.wasm`, the trimmed sysroot,
+the Arduino core and `manifest.json`) is produced by `make-web-dist.cjs` and
+attached to every release as `avrwasm.tar` by the `Release` GitHub Actions
+workflow.  From inside this example folder:
 
 ```bash
-# Either grab them from the latest release …
-gh release download --repo begeistert/avr-wasm \
-    --pattern '*.js' --pattern 'avr-libc-*' \
-    --dir Resources/Raw/avrwasm
+# Either grab it from the latest release …
+gh release download --repo begeistert/wasm-toolchains \
+    --pattern 'avrwasm.tar'
+mkdir -p Resources/Raw/arduinowasm/dist-web
+tar xf avrwasm.tar -C Resources/Raw/arduinowasm/dist-web
 
-# … or copy them from your own local build:
-cp ../../dist/avr-as.js   Resources/Raw/avrwasm/
-cp ../../dist/avr-ld.js   Resources/Raw/avrwasm/
-cp ../../dist/objcopy.js  Resources/Raw/avrwasm/
-cp -R ../../dist/avr-libc Resources/Raw/avrwasm/
+# … or copy it from your own local build:
+cp -R ../../dist-web Resources/Raw/arduinowasm/dist-web
 ```
 
-`Resources/Raw/avrwasm/.gitignore` keeps these binary artifacts out of
+`Resources/Raw/arduinowasm/.gitignore` keeps these binary artifacts out of
 git so the example folder stays small.
 
-The expected final layout under `Resources/Raw/avrwasm/` is:
+The expected final layout under `Resources/Raw/arduinowasm/` is:
 
 ```
-avr-as.js
-avr-ld.js
-objcopy.js
-index.html         (provided)
-pipeline.js        (provided)
-avr-libc/
-├── avr5/{libc.a,libm.a,crtatmega328p.o}
-├── avr6/{libc.a,libm.a,crtatmega2560.o}
-└── avr25/{libc.a,libm.a,crtattiny85.o}
+index.html             (provided)
+arduino-pipeline.js    (provided)
+dist-web/
+├── tools/             cc1plus.js/.wasm, avr-as.js, avr-ld.js, objcopy.js, …
+├── sysroot/           avr-libc + libgcc + headers (per board)
+├── arduino-core/      Arduino core + variants
+├── libraries/         Wire, SPI, EEPROM, SoftwareSerial
+├── specs/             per-MCU driver argv
+└── manifest.json      file catalog the pipeline fetches into MEMFS
 ```
 
 ## 2.  Build & run
@@ -111,7 +110,7 @@ dotnet build -t:Run -f net9.0-android
 ## How it works
 
 1. `MainPage.xaml` declares a `HybridWebView` whose `HybridRoot` points
-   at the `avrwasm/` folder shipped under `Resources/Raw/`.  MAUI
+   at the `arduinowasm/` folder shipped under `Resources/Raw/`.  MAUI
    serves that folder over an internal `https://` origin to
    `WKWebView` / WebView.
 2. When the user clicks **Compile**, `MainPage.xaml.cs` calls
@@ -119,10 +118,9 @@ dotnet build -t:Run -f net9.0-android
    with a `CompileRequest` carrying the source, the `-mmcu` value,
    the avr-libc arch family (`avr5`, `avr6`, `avr25`, …) and the name
    of the device CRT object (`crtatmega328p.o`, …).
-3. `pipeline.js` instantiates a fresh `avr-as` Module, writes the
-   source string into MEMFS, runs the assembler, then chains the same
-   pattern through `avr-ld` (after fetching the avr-libc sidecar files
-   via `fetch()`) and finally `objcopy` to produce Intel HEX.
+3. `arduino-pipeline.js` fetches the bundle files listed in
+   `dist-web/manifest.json` into MEMFS, then chains the WASM tools —
+   `cc1plus` → `avr-as` → `avr-ld` → `objcopy` — to produce Intel HEX.
 4. The HEX text is returned as JSON and rendered in the `OutputLabel`.
    While the link step is running, the linker prints progress through
    `HybridWebView.SendRawMessage`, which the C# side appends to the
@@ -131,22 +129,31 @@ dotnet build -t:Run -f net9.0-android
 ## Adding a new device
 
 The `Devices` list in `MainPage.xaml.cs` mirrors
-`src/avr-ld/devices.sh` in the parent repository.  When you add a new
-entry to the latter and rebuild `avr-ld.js` / the `avr-libc/` sidecar,
-add the matching row here:
+`src/avr-ld/devices.sh` (and the board table in
+`tools/arduino-wasm/recipe.js`) in the parent repository.  When you add a
+new entry there and rebuild the `dist-web` bundle, add the matching row
+here:
 
 ```csharp
-new("My Board (ATmegaXYZ)", "atmegaxyz", "avr5", "crtmxyz.o"),
+new("My Board (ATmegaXYZ)", "myboard"),
 ```
 
-…and make sure the corresponding files exist under
-`Resources/Raw/avrwasm/avr-libc/<arch>/`.
+…and make sure the bundle includes that board's sysroot under
+`Resources/Raw/arduinowasm/dist-web/sysroot/`.
 
 ## Troubleshooting
 
 | Symptom                                        | Likely cause |
 |------------------------------------------------|--------------|
-| `Toolchain ready.` never appears               | The three `.js` files are missing under `Resources/Raw/avrwasm/`. |
-| `[ld] cannot find -lc`                         | The `avr-libc/<arch>/libc.a` for the selected device is missing. |
-| `[ld] /usr/lib/avr/lib/<arch>/<crt>: No such…` | The CRT object for the selected device is missing from the sidecar. |
+| `Toolchain ready.` never appears               | The `dist-web/` bundle is missing under `Resources/Raw/arduinowasm/`. |
+| `[ld] cannot find -lc`                         | The `dist-web/sysroot/avr/lib/<arch>/libc.a` for the selected board is missing. |
+| `[ld] <crt>: No such file…`                    | The CRT object for the selected board is missing from the bundle sysroot. |
 | Build error `HybridWebView is not defined`     | Ensure the project targets **.NET 9**; `HybridWebView` was added in .NET 9 MAUI. |
+
+## License
+
+This example app is licensed under the **MIT License** (see
+[`LICENSE`](LICENSE)) — it is host code that drives the toolchain at arm's
+length (argv + a virtual filesystem) and contains no GPL compiler code.
+The downloaded `dist-web` toolchain blobs remain GPL-3.0-or-later; see
+[`../../docs/LICENSING.md`](../../docs/LICENSING.md) for how the two coexist.

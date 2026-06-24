@@ -1,4 +1,4 @@
-# Running avr-wasm Tools in a Desktop Environment and in a MAUI App
+# Running the WASM Tools in a Desktop Environment and in a MAUI App
 
 This guide shows how to use the compiled `.js` tools (`avr-as.js`, `avr-ld.js`, `objcopy.js`, …) in two host environments:
 

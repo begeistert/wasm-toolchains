@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arduino → WASM (HybridWebView host)</title>
+</head>
+<body>
+  <p id="status">Loading toolchain…</p>
+
+  <script>
+    // Phase string the C# host polls via InvokeJavaScriptAsync (window.diag),
+    // since the JS->C# SendRawMessage bridge may not be injected.
+    window.__phase = 'boot';
+    window.__err = '';
+    window.diag = function () {
+      return JSON.stringify({
+        phase: window.__phase,
+        err: window.__err,
+        factories: window.__factories ? Object.keys(window.__factories) : [],
+        wasm: typeof WebAssembly !== 'undefined',
+        sab: typeof SharedArrayBuffer !== 'undefined',
+        bridge: typeof (window.HybridWebView && window.HybridWebView.SendRawMessage),
+      });
+    };
+    window.addEventListener('error', (e) => { window.__err = 'js:' + e.message; });
+    window.addEventListener('unhandledrejection', (e) => { window.__err = 'reject:' + e.reason; });
+
+    window.__factories = {};
+    const TOOLS = [
+      ['cc1.js', 'createModule', 'cc1'],
+      ['cc1plus.js', 'createModule', 'cc1plus'],
+      ['avr-as.js', 'Module', 'avr-as'],
+      ['avr-ld.js', 'Module', 'avr-ld'],
+      ['ar.js', 'Module', 'ar'],
+      ['objcopy.js', 'Module', 'objcopy'],
+    ];
+    function loadScript(src) {
+      return new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = src; s.onload = res; s.onerror = () => rej(new Error('load ' + src));
+        document.body.appendChild(s);
+      });
+    }
+
+    window.__ready = (async () => {
+      for (const [file, glob, key] of TOOLS) {
+        window.__phase = 'loading ' + file;
+        await loadScript('./dist-web/tools/' + file);
+        window.__factories[key] = window[glob];
+        try { delete window[glob]; } catch {}
+      }
+      window.__phase = 'loading recipe.js';
+      await loadScript('./dist-web/recipe.js');
+      window.__phase = 'loading arduino-pipeline.js';
+      await loadScript('./arduino-pipeline.js');
+      window.__phase = 'ready';
+      document.getElementById('status').textContent = 'Toolchain ready.';
+    })().catch((e) => { window.__err = 'init:' + e.message; window.__phase = 'init-failed'; });
+
+    // window.compile(request) — waits for the toolchain, runs the compile.
+    window.compile = async function (req) {
+      window.__phase = 'await-ready';
+      await window.__ready;
+      window.__phase = 'compiling';
+      const r = await window.compileArduino(req);
+      window.__phase = r.ok ? 'done-ok' : 'done-fail';
+      return r;
+    };
+
+    // Fire-and-poll API driven by the native WKWebView via
+    // EvaluateJavaScriptAsync (the MAUI HybridWebView message bridge is not
+    // injected here, so we avoid it entirely). runSelfTest() kicks off a
+    // compile and stashes the JSON result in window.__result; the host polls
+    // window.__phase / window.__result with EvaluateJavaScriptAsync.
+    window.__testSrc =
+      'const int led=13;\n' +
+      'void setup(){ Serial.begin(9600); pinMode(led,OUTPUT); Serial.println("HELLO_AVR_WASM"); }\n' +
+      'void loop(){ digitalWrite(led,HIGH); delay(100); digitalWrite(led,LOW); delay(100); }\n';
+    window.__result = '';
+    window.runSelfTest = function () {
+      window.__result = '';
+      window.compile({ source: window.__testSrc, board: 'uno' })
+        .then((r) => { window.__result = JSON.stringify({ ok: r.ok, hex: r.hex, log: r.log }); })
+        .catch((e) => { window.__result = JSON.stringify({ ok: false, hex: null, log: String(e) }); });
+      return 'started';
+    };
+  </script>
+</body>
+</html>
