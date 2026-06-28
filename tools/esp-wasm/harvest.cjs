@@ -41,8 +41,9 @@ const dockerRun = (extra) => sh('docker', ['run', '--rm', '-v', `${WORK}:/out`, 
 function harvest() {
   fs.mkdirSync(WORK, { recursive: true });
   fs.copyFileSync(path.join(HERE, 'harvest.sh'), path.join(WORK, 'harvest.sh'));
-  // Reuse the pico kitchen-sink sketch (Tier-1 libs are board-agnostic).
-  fs.copyFileSync(path.join(AVR, 'tools/pico-wasm/bigsketch.ino'), path.join(WORK, 'bigsketch.ino'));
+  // ESP-specific kitchen-sink (the pico one #includes Servo, which arduino-esp32
+  // has no library for). See tools/esp-wasm/bigsketch.ino.
+  fs.copyFileSync(path.join(HERE, 'bigsketch.ino'), path.join(WORK, 'bigsketch.ino'));
   for (const u of UNITS) {
     console.log(`\n=== harvest ${u.tag} (${u.fqbn}, ${u.gccTarget}) ===`);
     dockerRun(['bash', '/out/harvest.sh', u.fqbn, u.tag, u.gccTarget]);
