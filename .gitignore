@@ -16,6 +16,13 @@ dist-web/
 # cache. All produced by the workflows; shipped via Releases, not git.
 dist-arm-gcc/
 dist-pico-web/
+dist-pico-wireless/
+dist-llvm/
+dist-llvm-web/
+dist-esp32-gcc/
+dist-esp32c3-gcc/
+dist-esp32-web/
+dist-esp32c3-web/
 dist-release/
 .libscan-cache/
 tools/lib-index/header-lib-map.json

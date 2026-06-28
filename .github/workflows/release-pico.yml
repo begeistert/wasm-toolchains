@@ -47,48 +47,41 @@ jobs:
         with: { name: dist-arm-gcc, path: dist-arm-gcc/ }
       - name: Build picocap harvest image (arduino-cli + arduino-pico + Tier-1 libs)
         run: docker build -t picocap:latest src/picocap
-      - name: Harvest + build the multi-board bundle
+      - name: Harvest + build the base bundle + wireless overlay
+        # Produces dist-pico-web (pico/pico2) and the sibling dist-pico-wireless
+        # (pico_w/pico2w delta only — the CYW43 WiFi/BT core.a + lwip/bearssl, no
+        # tools). Boards come from the target registry (targets/pico*.json).
         run: node tools/pico-wasm/harvest.cjs dist-pico-web
-      - name: Verify flash-identical to native + library sketches link
-        run: node tools/pico-wasm/verify-pico.cjs dist-pico-web
+      - name: Verify flash-identical to native + library sketches link (base + overlay)
+        run: node tools/pico-wasm/verify-pico.cjs dist-pico-web dist-pico-wireless
       - uses: actions/upload-artifact@v4
         with: { name: dist-pico-web, path: dist-pico-web/ }
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-pico-wireless, path: dist-pico-wireless/ }
 
   release:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'pico-v')
-    runs-on: ubuntu-latest
     needs: [bundle-pico]
     permissions: { contents: write }
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - uses: actions/download-artifact@v4
-        with: { name: dist-pico-web, path: dist-pico-web/ }
-      - name: Assemble catalog + tarball
-        run: |
-          node tools/dist/make-catalog.cjs "${GITHUB_REF_NAME#pico-v}" dist-release \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
-      - name: Publish to Release
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: |
-          ver="${GITHUB_REF_NAME#pico-v}"
-          notes=$(cat <<EOF
-          ## wasm-toolchains — Pico $ver
+    uses: ./.github/workflows/_release.yml
+    with:
+      track: pico
+      title: Pico
+      body: |
+        WebAssembly build of the ARM (RP2040/RP2350) GNU toolchain — `cc1plus`,
+        `arm-as`, `arm-ld`, `objcopy` (GCC 14.3) — with the multi-board link inputs and
+        header closures harvested from arduino-pico. Boards: `pico`, `pico2` (base) and
+        `pico_w`, `pico2w` (wireless overlay). Compile Pico sketches to UF2 in a browser,
+        WKWebView, or Node.js.
 
-          WebAssembly build of the ARM (RP2040/RP2350) GNU toolchain — \`cc1plus\`,
-          \`arm-as\`, \`arm-ld\`, \`objcopy\` (GCC 14.3) — with the multi-board link inputs and
-          header closures harvested from arduino-pico. Boards: \`pico\`, \`pico2\`, \`pico_w\`,
-          \`pico2w\`. Compile Pico sketches to UF2 in a browser, WKWebView, or Node.js.
+        ### Assets
+        - `picowasm.tar` — the base `dist-pico-web` bundle: the ARM tools (cc1plus.wasm
+          et al.), the `pico`/`pico2` templates + vfs, `manifest.json`.
+        - `picowwasm.tar` — the `pico-wireless` overlay: only the delta the W boards add
+          (the CYW43 WiFi/BT `core.a` + lwip/bearssl link/headers), no tools. Extract it
+          ON TOP of the base; the catalog marks it `requires: pico-toolchain`. A host that
+          doesn't target a W board never downloads it.
+        - `catalog.json` — versioned manifest (per-asset URL + sha256 + size + requires)
 
-          ### Assets
-          - \`picowasm.tar\` — the \`dist-pico-web\` bundle (tools, per-board templates + vfs, \`manifest.json\`)
-          - \`catalog.json\` — versioned manifest (per-asset URL + sha256 + size)
-
-          Verified flash-identical to a native \`arduino-cli\` build. See
-          [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md).
-          EOF
-          )
-          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
-            gh release create "${GITHUB_REF_NAME}" --title "Pico $ver" --notes "$notes"
-          gh release upload "${GITHUB_REF_NAME}" dist-release/* --clobber
+        Verified flash-identical to a native `arduino-cli` build. See
+        [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).

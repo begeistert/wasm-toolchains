@@ -1,0 +1,19 @@
+{
+  "id": "esp32c3-toolchain",
+  "title": "ESP32-C3",
+  "track": "esp-v",
+  "arch": "riscv",
+  "chip": "esp32c3",
+  "gcc": "esp-14.2.0_20241119",
+  "gccTarget": "riscv32-esp-elf",
+  "buildContext": "src/esp-gcc",
+  "distDir": "dist-esp32c3-web",
+  "tar": "esp32c3wasm.tar",
+  "output": "bin",
+  "comment": "ESP32-C3 is RISC-V (rv32imc). Built from the Espressif gcc fork for ABI parity with arduino-esp32's precompiled core. Could alternatively be driven by the shared LLVM IR backend (RISCV target).",
+  "harvest": { "image": "espcap:latest", "core": "esp32:esp32@3.1.1" },
+  "flash": { "bootloader": "0x0", "partitions": "0x8000", "app": "0x10000" },
+  "boards": [
+    { "key": "esp32c3", "fqbn": "esp32c3", "tag": "esp32c3", "mcu": "esp32c3", "asFlags": ["-march=rv32imc_zicsr_zifencei", "-mabi=ilp32"] }
+  ]
+}

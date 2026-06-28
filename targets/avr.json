@@ -1,0 +1,15 @@
+{
+  "id": "avr-toolchain",
+  "title": "AVR",
+  "track": "avr-v",
+  "arch": "avr",
+  "gcc": "15.2",
+  "distDir": "dist-web",
+  "tar": "avrwasm.tar",
+  "output": "hex",
+  "boards": [
+    { "key": "uno",  "mcu": "atmega328p", "arch": "avr5", "crt": "crtatmega328p.o", "fcpu": "16000000L", "define": "AVR_UNO",      "variant": "standard" },
+    { "key": "nano", "mcu": "atmega328p", "arch": "avr5", "crt": "crtatmega328p.o", "fcpu": "16000000L", "define": "AVR_NANO",     "variant": "standard" },
+    { "key": "mega", "mcu": "atmega2560", "arch": "avr6", "crt": "crtatmega2560.o", "fcpu": "16000000L", "define": "AVR_MEGA2560", "variant": "mega" }
+  ]
+}

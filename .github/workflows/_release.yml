@@ -1,0 +1,68 @@
+name: _release
+
+# Reusable release job, shared by every track (release-avr / release-pico /
+# release-esp / release-llvm). The build + bundle steps differ per track and stay
+# in each caller; the publish step is identical — assemble catalog.json from
+# whatever dist-*-web bundles the run produced (make-catalog is registry-driven)
+# and create/upload the GitHub Release — so it lives here once.
+#
+# A new track wires its release like:
+#   release:
+#     needs: [<its bundle job>]
+#     if: github.ref_type == 'tag' && startsWith(github.ref_name, '<track>-v')
+#     permissions: { contents: write }
+#     uses: ./.github/workflows/_release.yml
+#     with: { track: <track>, title: <Title>, body: "<markdown>" }
+#
+# It downloads ALL run artifacts into the workspace; since each bundle artifact is
+# named after its registry distDir (dist-pico-web, dist-esp32-web, …), they land
+# where make-catalog expects them. `body` is the release notes (may use
+# ${{ github.repository }}); this job prepends the "wasm-toolchains — <Title> <ver>"
+# header so callers never repeat the version dance.
+
+on:
+  workflow_call:
+    inputs:
+      track: { required: true, type: string }   # tag prefix, e.g. "pico" for pico-v*
+      title: { required: true, type: string }   # human label, e.g. "Pico"
+      body:  { required: true, type: string }   # release notes markdown (no $ver needed)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      # All bundle artifacts from this run, each into a dir named after the
+      # artifact (== its distDir), which is exactly where make-catalog looks.
+      - uses: actions/download-artifact@v4
+        with: { path: . , merge-multiple: false }
+      - name: Flatten artifact dirs to the repo root
+        # download-artifact nests each artifact under <name>/<name>/… only when the
+        # uploaded path was a dir; normalize so dist-*-web sit at the workspace root.
+        run: |
+          for d in dist-*-web dist-web; do
+            if [ -d "$d/$d" ]; then mv "$d/$d" "_$d" && rm -rf "$d" && mv "_$d" "$d"; fi
+          done
+          ls -d dist-*web 2>/dev/null || true
+      - name: Assemble catalog + tarballs
+        run: |
+          ver="${GITHUB_REF_NAME#${{ inputs.track }}-v}"
+          node tools/dist/make-catalog.cjs "$ver" dist-release \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+      - name: Publish to Release
+        # body/title come in via env, NOT inlined into the shell, so backticks and
+        # $(...) in the notes are treated literally (no interpolation/injection).
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          TRACK: "${{ inputs.track }}"
+          TITLE: "${{ inputs.title }}"
+          BODY: "${{ inputs.body }}"
+        run: |
+          ver="${GITHUB_REF_NAME#${TRACK}-v}"
+          { printf '## wasm-toolchains — %s %s\n\n' "$TITLE" "$ver"; printf '%s\n' "$BODY"; } > notes.md
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" --title "$TITLE $ver" --notes-file notes.md
+          gh release upload "${GITHUB_REF_NAME}" dist-release/* --clobber
