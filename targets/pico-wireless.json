@@ -1,0 +1,15 @@
+{
+  "id": "pico-wireless",
+  "title": "Pico W",
+  "track": "pico-v",
+  "arch": "arm",
+  "extends": "pico-toolchain",
+  "overlay": true,
+  "distDir": "dist-pico-wireless",
+  "tar": "picowwasm.tar",
+  "harvest": { "image": "picocap:latest" },
+  "boards": [
+    { "key": "pico_w",  "fqbn": "rpipicow",  "tag": "picow",  "mcu": "rp2040", "family": "0xe48bff56", "asFlags": ["-mcpu=cortex-m0plus", "-mthumb"] },
+    { "key": "pico2w", "fqbn": "rpipico2w", "tag": "pico2w", "mcu": "rp2350", "family": "0xe48bff59", "asFlags": ["-mcpu=cortex-m33", "-mthumb", "-mfloat-abi=softfp", "-march=armv8-m.main+dsp+fp"] }
+  ]
+}

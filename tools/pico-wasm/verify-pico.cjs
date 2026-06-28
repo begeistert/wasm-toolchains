@@ -14,6 +14,15 @@ const path = require('path');
 // absolute path so the require()s below work regardless of cwd (require treats a
 // bare relative path as a module name, not a file).
 const DIST = path.resolve(process.argv[2] || process.env.DIST || path.join(__dirname, '../../dist-pico-web'));
+// Optional wireless overlay (pico-wireless): the W boards' delta vfs + manifest.
+// When given, files resolve overlay-first then base, and the two manifests' board
+// tables merge — so all four boards verify against the same merged root the host
+// gets by extracting base + overlay. Default to the sibling dist-pico-wireless if
+// it exists, so a plain `verify-pico dist-pico-web` still covers the W boards.
+const OVERLAY_ARG = process.argv[3] || process.env.OVERLAY ||
+  (fs.existsSync(path.join(path.dirname(DIST), 'dist-pico-wireless', 'manifest.json'))
+    ? path.join(path.dirname(DIST), 'dist-pico-wireless') : null);
+const OVERLAY = OVERLAY_ARG ? path.resolve(OVERLAY_ARG) : null;
 // recipe-pico.js is canonical here (the toolchain repo); a host app that ships a
 // copy alongside its bundle should keep them in sync. Override with RECIPE if needed.
 const R = require(process.env.RECIPE || path.join(__dirname, 'recipe-pico.js'));
@@ -32,9 +41,17 @@ const F = {
   objcopy: require(path.join(DIST, 'tools/objcopy.js')),
 };
 const enc = (s) => new TextEncoder().encode(s);
+// Resolve a bundle-relative path overlay-first, then base — both tarballs extract
+// into one root, so a W board's delta files come from the overlay and everything
+// shared comes from the base.
+const resolveRel = (rel) => (OVERLAY && fs.existsSync(path.join(OVERLAY, rel))) ? path.join(OVERLAY, rel) : path.join(DIST, rel);
 const m = JSON.parse(fs.readFileSync(path.join(DIST, 'manifest.json'), 'utf8'));
-const rdBundle = (rel) => fs.readFileSync(path.join(DIST, rel));
-const tpl = (p) => fs.readFileSync(path.join(DIST, p.replace(/^.*?templates\//, 'templates/')), 'utf8');
+if (OVERLAY) {
+  const mo = JSON.parse(fs.readFileSync(path.join(OVERLAY, 'manifest.json'), 'utf8'));
+  Object.assign(m.boards, mo.boards);   // base boards (pico/pico2) + overlay (pico_w/pico2w)
+}
+const rdBundle = (rel) => fs.readFileSync(resolveRel(rel));
+const tpl = (p) => fs.readFileSync(resolveRel(p.replace(/^.*?templates\//, 'templates/')), 'utf8');
 
 async function runTool(factory, label, argv, inputs, outputs) {
   const lines = []; let ec = 0; const out = new Map();
