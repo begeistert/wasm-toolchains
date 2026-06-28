@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { target } = require('../targets/registry.cjs');
 
 const root = path.resolve(__dirname, '..', '..');
 const dist = path.join(root, 'dist-avr-gcc');         // full build output
@@ -15,12 +16,12 @@ const core = path.join(root, 'src', 'arduino-core');
 const libsRoot = path.join(root, 'libraries');        // bundled libraries
 const out = path.join(root, 'dist-web');
 
-// Boards -> the arch/mcu whose target files must travel with the bundle.
-const BOARDS = [
-  { board: 'uno',  mcu: 'atmega328p', arch: 'avr5', crt: 'crtatmega328p.o', variant: 'standard' },
-  { board: 'nano', mcu: 'atmega328p', arch: 'avr5', crt: 'crtatmega328p.o', variant: 'standard' },
-  { board: 'mega', mcu: 'atmega2560', arch: 'avr6', crt: 'crtatmega2560.o', variant: 'mega' },
-];
+// Boards -> the arch/mcu whose target files must travel with the bundle. Values
+// come from the target registry; we project just the fields this bundle ships
+// (the manifest's board shape stays {board, mcu, arch, crt, variant}).
+const BOARDS = target('avr-toolchain').boards.map((b) => ({
+  board: b.key, mcu: b.mcu, arch: b.arch, crt: b.crt, variant: b.variant,
+}));
 
 function copy(src, dstRel) {
   const dst = path.join(out, dstRel);

@@ -1,0 +1,16 @@
+{
+  "id": "pico-toolchain",
+  "title": "Pico",
+  "track": "pico-v",
+  "arch": "arm",
+  "gcc": "14.3.0",
+  "buildContext": "src/arm-gcc",
+  "distDir": "dist-pico-web",
+  "tar": "picowasm.tar",
+  "output": "uf2",
+  "harvest": { "image": "picocap:latest", "core": "rp2040:rp2040@5.6.0" },
+  "boards": [
+    { "key": "pico",  "fqbn": "rpipico",  "tag": "pico",  "mcu": "rp2040", "family": "0xe48bff56", "asFlags": ["-mcpu=cortex-m0plus", "-mthumb"] },
+    { "key": "pico2", "fqbn": "rpipico2", "tag": "pico2", "mcu": "rp2350", "family": "0xe48bff59", "asFlags": ["-mcpu=cortex-m33", "-mthumb", "-mfloat-abi=softfp", "-march=armv8-m.main+dsp+fp"] }
+  ]
+}

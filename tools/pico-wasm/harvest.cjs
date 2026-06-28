@@ -17,22 +17,22 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { boardsForTrack, baseBundle } = require('../targets/registry.cjs');
 
 const HERE = __dirname;
 const AVR = path.resolve(HERE, '..', '..');
 const DIST_ARM = process.env.DIST_ARM || path.join(AVR, 'dist-arm-gcc');
-const IMAGE = process.env.PICOCAP_IMAGE || 'picocap:latest';
+const IMAGE = process.env.PICOCAP_IMAGE || baseBundle('pico-v').harvest.image;
 const WORK = process.env.WORK || path.join(require('os').tmpdir(), 'picoharvest');
 const PICOROOT = path.join(WORK, 'picoroot');
 const OUT = process.argv[2] || path.join(AVR, 'dist-pico-web');
 
-// board key -> { fqbn, tag }. The W variants share mcu/family with their sibling.
-const BOARDS = {
-  pico:   { fqbn: 'rpipico',   tag: 'pico' },
-  pico2:  { fqbn: 'rpipico2',  tag: 'pico2' },
-  pico_w: { fqbn: 'rpipicow',  tag: 'picow' },
-  pico2w: { fqbn: 'rpipico2w', tag: 'pico2w' },
-};
+// board key -> { fqbn, tag }, from the target registry (base bundle + its
+// wireless overlay). We harvest every board the track can ship in one container
+// run; make-pico-dist decides which land in a given bundle. The W variants share
+// mcu/family with their sibling.
+const BOARDS = Object.fromEntries(
+  boardsForTrack('pico-v').map((b) => [b.key, { fqbn: b.fqbn, tag: b.tag }]));
 
 const sh = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit' });
 const shOut = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8' });
@@ -72,7 +72,7 @@ function extract() {
 function gincDirs() {
   const tc = fs.readdirSync(path.join(PICOROOT, 'root/.arduino15/packages/rp2040/tools/pqt-gcc'))[0];
   const base = `/root/.arduino15/packages/rp2040/tools/pqt-gcc/${tc}`;
-  const gv = '14.3.0';
+  const gv = baseBundle('pico-v').gcc;
   return [
     `${base}/arm-none-eabi/include/c++/${gv}`,
     `${base}/arm-none-eabi/include/c++/${gv}/arm-none-eabi/thumb`,
