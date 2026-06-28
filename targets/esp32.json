@@ -1,0 +1,20 @@
+{
+  "id": "esp32-toolchain",
+  "title": "ESP32",
+  "track": "esp-v",
+  "arch": "xtensa",
+  "chip": "esp32",
+  "gcc": "esp-14.2.0_20241119",
+  "gccTarget": "xtensa-esp-elf",
+  "xtensaOverlay": "esp32",
+  "buildContext": "src/esp-gcc",
+  "distDir": "dist-esp32-web",
+  "tar": "esp32wasm.tar",
+  "output": "bin",
+  "comment": "ESP32 classic is Xtensa LX6. Needs the Espressif gcc fork + the esp32 xtensa-overlay (XTENSA_GNU_CONFIG) — upstream gcc has no esp32 config. Built per-target (Xtensa cannot share the RISC-V/ARM cc1plus.wasm).",
+  "harvest": { "image": "espcap:latest", "core": "esp32:esp32@3.1.1" },
+  "flash": { "bootloader": "0x1000", "partitions": "0x8000", "app": "0x10000" },
+  "boards": [
+    { "key": "esp32", "fqbn": "esp32", "tag": "esp32", "mcu": "esp32", "asFlags": ["-mlongcalls", "-mtext-section-literals"] }
+  ]
+}
