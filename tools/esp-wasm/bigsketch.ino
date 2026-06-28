@@ -16,6 +16,12 @@
 #include <Keypad.h>
 #include <math.h>
 
+// The generic ESP32 Dev Module variant doesn't define LED_BUILTIN; fall back so
+// the harvest sketch compiles on any board (real boards that define it keep it).
+#ifndef LED_BUILTIN
+#define LED_BUILTIN 2
+#endif
+
 Adafruit_NeoPixel strip(8, 6, NEO_GRB + NEO_KHZ800);
 DHT dht(7, DHT22);
 Adafruit_PWMServoDriver pwm;
