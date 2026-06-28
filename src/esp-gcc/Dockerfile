@@ -17,9 +17,11 @@ FROM emscripten/emsdk:4.0.22 AS builder
 
 ARG TARGET=riscv32-esp-elf
 ARG XTENSA_OVERLAY=
-# Espressif fork branches; pin to the toolchain release that matches the core.
+# Espressif fork refs; pin to the toolchain release that matches the core. gcc is
+# a branch/tag; binutils is published as tags named esp-<ver>_<date> (no
+# esp-2.43_<date> — the 2.43 line is esp-2.43.1_<date>).
 ARG GCC_BRANCH=esp-14.2.0_20241119
-ARG BINUTILS_BRANCH=esp-2.43_20241119
+ARG BINUTILS_BRANCH=esp-2.43.1_20260121
 ARG GMP_VER=6.3.0
 ARG MPFR_VER=4.2.1
 ARG MPC_VER=1.3.1
