@@ -1,0 +1,96 @@
+name: Release ESP32
+
+# Builds and publishes the ESP32 toolchain bundles (esp32 = Xtensa LX6, esp32c3 =
+# RISC-V) on one track. Each chip is a different ISA, so each ships its own
+# cc1plus.wasm + binutils — two independent bundles in one release.
+#
+#   build-esp-gcc (matrix) — cc1/cc1plus/lto1 + binutils per gcc target → WASM
+#   bundle-esp             — espcap harvest → dist-esp32-web + dist-esp32c3-web
+#   release                — catalog.json + esp32wasm.tar + esp32c3wasm.tar → ESP Release
+#
+# Runs ONLY on `esp-v*` tags (full build → publish) and manual workflow_dispatch
+# (build, no publish). The gcc cross builds are ~hours and gha-cached per target.
+#
+# NOTE: the Espressif gcc/binutils forks + the Xtensa overlay wiring (src/esp-gcc)
+# and the ESP-IDF harvest (src/espcap, tools/esp-wasm) are CI-validated and may need
+# tuning to the pinned core/toolchain on first green run.
+
+on:
+  push:
+    tags: ["esp-v*"]
+  workflow_dispatch:
+
+jobs:
+  build-esp-gcc:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chip: esp32c3
+            target: riscv32-esp-elf
+            overlay: ""
+          - chip: esp32
+            target: xtensa-esp-elf
+            overlay: esp32
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build cc1/cc1plus/lto1 + binutils (${{ matrix.target }} → WASM)
+        run: |
+          docker buildx build --progress=plain \
+            --build-arg=TARGET=${{ matrix.target }} \
+            --build-arg=XTENSA_OVERLAY=${{ matrix.overlay }} \
+            --cache-to=type=gha,mode=max,scope=esp-${{ matrix.chip }} \
+            --cache-from=type=gha,scope=esp-${{ matrix.chip }} \
+            --output=type=local,dest=dist-${{ matrix.chip }}-gcc \
+            src/esp-gcc
+      - name: Sanity-check tools
+        run: for t in cc1.js cc1plus.js lto1.js; do test -s "dist-${{ matrix.chip }}-gcc/$t"; done
+      - uses: actions/upload-artifact@v4
+        with: { name: "dist-${{ matrix.chip }}-gcc", path: "dist-${{ matrix.chip }}-gcc/" }
+
+  bundle-esp:
+    runs-on: ubuntu-latest
+    needs: [build-esp-gcc]
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-esp32-gcc, path: dist-esp32-gcc/ }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-esp32c3-gcc, path: dist-esp32c3-gcc/ }
+      - name: Build espcap harvest image (arduino-cli + arduino-esp32 + Tier-1 libs)
+        run: docker build -t espcap:latest src/espcap
+      - name: Harvest + build both esp bundles
+        run: node tools/esp-wasm/harvest.cjs
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-esp32-web, path: dist-esp32-web/ }
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-esp32c3-web, path: dist-esp32c3-web/ }
+
+  release:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'esp-v')
+    needs: [bundle-esp]
+    permissions: { contents: write }
+    uses: ./.github/workflows/_release.yml
+    with:
+      track: esp
+      title: ESP32
+      body: |
+        WebAssembly build of the Espressif GNU toolchains — `cc1`/`cc1plus`/`lto1` +
+        binutils — for **ESP32** (Xtensa LX6) and **ESP32-C3** (RISC-V), with the link
+        inputs + header closures harvested from arduino-esp32. Compile ESP sketches to a
+        flash app image in a browser, WKWebView, or Node.js. Each chip is a distinct ISA
+        and ships as its own bundle.
+
+        ### Assets
+        - `esp32wasm.tar` — the `dist-esp32-web` bundle (Xtensa tools, templates + vfs, `manifest.json` with flash offsets)
+        - `esp32c3wasm.tar` — the `dist-esp32c3-web` bundle (RISC-V tools, templates + vfs, `manifest.json` with flash offsets)
+        - `catalog.json` — versioned manifest (per-asset URL + sha256 + size)
+
+        See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).

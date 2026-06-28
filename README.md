@@ -16,7 +16,11 @@ orchestrator chains them the way `arduino-cli` / the gcc driver would —
 | Toolchain | Source | Targets | Output bundle |
 |-----------|--------|---------|---------------|
 | **AVR** | `src/gas`, `src/binutils`, `src/avr-ld`, `src/avr-gcc` (GCC 15.2) | Uno/Nano (ATmega328P), Mega (ATmega2560), ATtiny85 | `dist-web/` → `avrwasm.tar` |
-| **ARM/Pico** | `src/arm-gcc` (GCC 14.3) + `src/picocap` harvest | RP2040/RP2350 (`pico`, `pico2`, `pico_w`, `pico2w`) | `dist-pico-web/` → `picowasm.tar` |
+| **ARM/Pico** | `src/arm-gcc` (GCC 14.3) + `src/picocap` harvest | RP2040/RP2350 — `pico`, `pico2` | `dist-pico-web/` → `picowasm.tar` |
+| **Pico W** (overlay) | same toolchain, delta only (CYW43 WiFi/BT) | `pico_w`, `pico2w` | `dist-pico-wireless/` → `picowwasm.tar` |
+| **ESP32** | `src/esp-gcc` (Espressif gcc fork) + `src/espcap` harvest | ESP32 (Xtensa LX6) | `dist-esp32-web/` → `esp32wasm.tar` |
+| **ESP32-C3** | `src/esp-gcc` (RISC-V target) + `src/espcap` harvest | ESP32-C3 (RV32IMC) | `dist-esp32c3-web/` → `esp32c3wasm.tar` |
+| **LLVM** | `src/llvm` (LLVM 19.1.7) | LLVM IR (`.ll`/`.bc`) → ARM/AArch64/RISC-V/AVR/Xtensa | `dist-llvm-web/` → `llvmwasm.tar` |
 
 Plus the Arduino core (`src/arduino-core`), bundled libraries (`libraries/`), a
 weekly **library index** (`tools/lib-index` → `header-lib-map.json`) for automatic
@@ -50,10 +54,15 @@ node tools/pico-wasm/harvest.cjs dist-pico-web
 node tools/pico-wasm/verify-pico.cjs dist-pico-web
 ```
 
-CI does all of this in two independent release tracks —
-[`release-avr.yml`](.github/workflows/release-avr.yml) (tags `avr-v*`) and
-[`release-pico.yml`](.github/workflows/release-pico.yml) (tags `pico-v*`) — each
-publishing its own GitHub Release.
+CI does all of this in independent release tracks —
+[`release-avr.yml`](.github/workflows/release-avr.yml) (tags `avr-v*`),
+[`release-pico.yml`](.github/workflows/release-pico.yml) (tags `pico-v*`, base +
+wireless overlay), [`release-esp.yml`](.github/workflows/release-esp.yml) (tags
+`esp-v*`, ESP32 Xtensa + ESP32-C3 RISC-V) and
+[`release-llvm.yml`](.github/workflows/release-llvm.yml) (tags `llvm-v*`) — each
+publishing its own GitHub Release. The publishable bundles
+are declared once in [`targets/`](targets/) and read by every build/catalog
+script via [`tools/targets/registry.cjs`](tools/targets/registry.cjs).
 
 ## Compiling a sketch (Node harness)
 

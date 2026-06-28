@@ -1,0 +1,78 @@
+name: Release LLVM
+
+# Builds and publishes the LLVM IR backend bundle (llvmwasm) — a single
+# multi-target backend (llc/opt/lld/llvm-mc/llvm-objcopy) that compiles LLVM IR
+# (.ll/.bc) to object/firmware for ARM/AArch64/RISC-V/AVR + experimental Xtensa.
+#
+#   build-llvm — llc/opt/lld/llvm-mc/llvm-objcopy (llvm-project → WASM)
+#   bundle     — make-llvm-dist → dist-llvm-web (tools + manifest, brotli'd)
+#   release    — catalog.json + llvmwasm.tar → LLVM Release
+#
+# Runs ONLY on `llvm-v*` tags (full build → publish) and manual workflow_dispatch
+# (build, no publish). The LLVM cross build is heavy (~hours, RAM-hungry) and
+# gha-cached like the gcc tracks. The GCC tracks have their own workflows.
+
+on:
+  push:
+    tags: ["llvm-v*"]
+  workflow_dispatch:
+
+jobs:
+  build-llvm:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build llc/opt/lld/llvm-mc/llvm-objcopy (llvm-project → WASM)
+        run: |
+          docker buildx build --progress=plain \
+            --cache-to=type=gha,mode=max,scope=llvm \
+            --cache-from=type=gha,scope=llvm \
+            --output=type=local,dest=dist-llvm \
+            src/llvm
+      - name: Sanity-check tools
+        run: for t in llc opt lld llvm-mc llvm-objcopy; do test -s "dist-llvm/$t.js"; done
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-llvm, path: dist-llvm/ }
+
+  bundle:
+    runs-on: ubuntu-latest
+    needs: [build-llvm]
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-llvm, path: dist-llvm/ }
+      - name: Assemble web bundle
+        run: node tools/llvm-wasm/make-llvm-dist.cjs dist-llvm-web dist-llvm
+      - name: Sanity-check bundle
+        run: |
+          test -s dist-llvm-web/manifest.json
+          for t in llc opt lld llvm-mc llvm-objcopy; do test -s "dist-llvm-web/tools/$t.js"; done
+      - uses: actions/upload-artifact@v4
+        with: { name: dist-llvm-web, path: dist-llvm-web/ }
+
+  release:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'llvm-v')
+    needs: [bundle]
+    permissions: { contents: write }
+    uses: ./.github/workflows/_release.yml
+    with:
+      track: llvm
+      title: LLVM
+      body: |
+        WebAssembly build of the LLVM IR backend — `llc`, `opt`, `lld`, `llvm-mc`,
+        `llvm-objcopy` — as a single multi-target backend. Compile LLVM IR (`.ll`/`.bc`)
+        to object code and link to firmware for ARM, AArch64, RISC-V, AVR and
+        experimental Xtensa, entirely in a browser, WKWebView, or Node.js. The target
+        is chosen by the IR's triple or `-mtriple` — one binary, every arch.
+
+        ### Assets
+        - `llvmwasm.tar` — the `dist-llvm-web` bundle (tools + `manifest.json`)
+        - `catalog.json` — versioned manifest (per-asset URL + sha256 + size)
+
+        See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).

@@ -128,42 +128,24 @@ jobs:
 
   release:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'avr-v')
-    runs-on: ubuntu-latest
     needs: [bundle-avr]
     permissions: { contents: write }
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - uses: actions/download-artifact@v4
-        with: { name: dist-web, path: dist-web/ }
-      - name: Assemble catalog + tarball
-        run: |
-          node tools/dist/make-catalog.cjs "${GITHUB_REF_NAME#avr-v}" dist-release \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
-      - name: Publish to Release
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: |
-          ver="${GITHUB_REF_NAME#avr-v}"
-          notes=$(cat <<EOF
-          ## wasm-toolchains — AVR $ver
+    uses: ./.github/workflows/_release.yml
+    with:
+      track: avr
+      title: AVR
+      body: |
+        WebAssembly build of the AVR GNU toolchain — `avr-as`, `avr-ld`, binutils,
+        and the compiler proper `cc1`/`cc1plus`/`lto1` (GCC 15.2) — plus the Arduino
+        core and bundled libraries. Compile Arduino sketches to Intel HEX in a browser,
+        WKWebView, or Node.js.
 
-          WebAssembly build of the AVR GNU toolchain — \`avr-as\`, \`avr-ld\`, binutils,
-          and the compiler proper \`cc1\`/\`cc1plus\`/\`lto1\` (GCC 15.2) — plus the Arduino
-          core and bundled libraries. Compile Arduino sketches to Intel HEX in a browser,
-          WKWebView, or Node.js.
+        ### Assets
+        - `avrwasm.tar` — the `dist-web` bundle (tools, per-board sysroot, Arduino core, libraries, `manifest.json`)
+        - `catalog.json` — versioned manifest (per-asset URL + sha256 + size)
 
-          ### Assets
-          - \`avrwasm.tar\` — the \`dist-web\` bundle (tools, per-board sysroot, Arduino core, libraries, \`manifest.json\`)
-          - \`catalog.json\` — versioned manifest (per-asset URL + sha256 + size)
+        For automatic library resolution, the host app reads `header-lib-map.json`
+        from the rolling [`library-index`](https://github.com/${{ github.repository }}/releases/tag/library-index)
+        release (refreshed weekly), independent of this pinned toolchain release.
 
-          For automatic library resolution, the host app reads \`header-lib-map.json\`
-          from the rolling [\`library-index\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/library-index)
-          release (refreshed weekly), independent of this pinned toolchain release.
-
-          See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md).
-          EOF
-          )
-          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
-            gh release create "${GITHUB_REF_NAME}" --title "AVR $ver" --notes "$notes"
-          gh release upload "${GITHUB_REF_NAME}" dist-release/* --clobber
+        See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
