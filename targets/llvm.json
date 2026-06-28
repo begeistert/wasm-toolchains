@@ -1,0 +1,15 @@
+{
+  "id": "llvm-toolchain",
+  "title": "LLVM",
+  "track": "llvm-v",
+  "arch": "multi",
+  "llvm": "19.1.7",
+  "buildContext": "src/llvm",
+  "distDir": "dist-llvm-web",
+  "tar": "llvmwasm.tar",
+  "output": "obj",
+  "comment": "One multi-target backend compiles LLVM IR (.ll/.bc) to object/firmware for every arch below — no per-arch wasm. Backs the GCC tracks' alt path and the upcoming ESP32 (Xtensa) / ESP32-C3 (RISC-V) targets.",
+  "llvmTargets": ["ARM", "AArch64", "RISCV", "AVR"],
+  "llvmExperimentalTargets": ["Xtensa"],
+  "llvmTools": ["llc", "opt", "lld", "llvm-mc", "llvm-objcopy"]
+}
