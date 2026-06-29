@@ -54,10 +54,13 @@ jobs:
         run: node tools/pico-wasm/harvest.cjs dist-pico-web
       - name: Verify flash-identical to native + library sketches link (base + overlay)
         run: node tools/pico-wasm/verify-pico.cjs dist-pico-web dist-pico-wireless
+      # include-hidden-files: the vfs lives under vfs/root/.arduino15 + /.cache
+      # (dotted dirs from the arduino-cli mirror); upload-artifact@v4 drops hidden
+      # files by default, which would ship a tools-only bundle with no headers/libs.
       - uses: actions/upload-artifact@v4
-        with: { name: dist-pico-web, path: dist-pico-web/ }
+        with: { name: dist-pico-web, path: dist-pico-web/, include-hidden-files: true }
       - uses: actions/upload-artifact@v4
-        with: { name: dist-pico-wireless, path: dist-pico-wireless/ }
+        with: { name: dist-pico-wireless, path: dist-pico-wireless/, include-hidden-files: true }
 
   release:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'pico-v')
