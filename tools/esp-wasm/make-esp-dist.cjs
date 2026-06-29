@@ -94,10 +94,36 @@ function buildBundle(t) {
       else if (a.startsWith('-l')) { const lib = 'lib' + a.slice(2) + '.a'; for (const d of Ldirs) { const c = norm(path.join(d, lib)); if (fs.existsSync(path.join(PICOROOT, c))) { addLink(c); break; } } }
     }
 
-    b.templates.cc1plus = emit(`templates/${board.key}/cc1plus.argv`, Buffer.from(argvLines(cfg.cc1, /cc1plus/).join('\n')));
-    b.templates.ld = emit(`templates/${board.key}/ld.argv`, Buffer.from(ldRaw.join('\n')));
-    b.sketchSrc = norm(argvLines(cfg.cc1, /cc1plus/).find((l) => /\.ino\.cpp$/.test(l)));
-    b.sketchObj = norm(ldRaw.find((l) => /\.ino\.cpp\.o$/.test(l)));
+    // ESP linker scripts: arduino-esp32 passes them as `-T <bare-name>` resolved
+    // from the chip's SDK ld dir (esp32-arduino-libs/<ver>/<chip>/ld), which isn't
+    // in the captured -L set, so the bare names wouldn't resolve on the host. Ship
+    // that dir's .ld scripts and prepend it as a -L (INCLUDE-safe: any script the
+    // memory/sections .ld pull in is found there too).
+    const sdkLd = (() => {
+      const base = path.join(PICOROOT, 'root/.arduino15/packages/esp32/tools/esp32-arduino-libs');
+      if (!fs.existsSync(base)) return null;
+      for (const ver of fs.readdirSync(base)) { const d = path.join(base, ver, t.chip, 'ld'); if (fs.existsSync(d)) return d; }
+      return null;
+    })();
+    if (sdkLd) {
+      const vfsLd = '/' + path.relative(PICOROOT, sdkLd);
+      // .ld scripts AND the SDK .a libs that live alongside them (libphy/librtc/
+      // libbtdm_app... referenced by -l but not in any captured -L dir).
+      for (const f of fs.readdirSync(sdkLd)) if (/\.(ld|a)$/.test(f)) addLink(norm(path.join(vfsLd, f)));
+      ldRaw.unshift('-L' + vfsLd);
+    }
+    // Normalize -L paths (the captured argv has un-normalized `bin/../lib/...` that
+    // wasm-ld's MEMFS search won't resolve to where the libs were collected) and
+    // strip the dynconfig options (cc1plus -mdynconfig / ld --dynconfig select the
+    // plugin path our static per-chip toolchain rejects).
+    const cc1Argv = argvLines(cfg.cc1, /cc1plus/).filter((l) => !/^-mdynconfig/.test(l));
+    const ldArgv = ldRaw.filter((l) => !/^--?dynconfig/.test(l))
+      .map((a) => a.startsWith('-L') ? '-L' + norm(a.slice(2)) : a);
+
+    b.templates.cc1plus = emit(`templates/${board.key}/cc1plus.argv`, Buffer.from(cc1Argv.join('\n')));
+    b.templates.ld = emit(`templates/${board.key}/ld.argv`, Buffer.from(ldArgv.join('\n')));
+    b.sketchSrc = norm(cc1Argv.find((l) => /\.ino\.cpp$/.test(l)));
+    b.sketchObj = norm(ldArgv.find((l) => /\.ino\.cpp\.o$/.test(l)));
     b.outElf = norm(ldRaw[ldRaw.indexOf('-o') + 1]);
     manifest.boards[board.key] = b;
   }

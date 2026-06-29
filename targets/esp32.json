@@ -18,6 +18,6 @@
   "harvest": { "image": "espcap:latest", "core": "esp32:esp32@3.1.1" },
   "flash": { "bootloader": "0x1000", "partitions": "0x8000", "app": "0x10000" },
   "boards": [
-    { "key": "esp32", "fqbn": "esp32", "tag": "esp32", "mcu": "esp32", "asFlags": ["-mlongcalls", "-mtext-section-literals"] }
+    { "key": "esp32", "fqbn": "esp32", "tag": "esp32", "mcu": "esp32", "asFlags": ["--longcalls", "--text-section-literals"] }
   ]
 }

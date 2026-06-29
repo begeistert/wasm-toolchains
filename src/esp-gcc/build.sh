@@ -64,9 +64,13 @@ fi
 bu=/opt/build/binutils; mkdir -p "$bu"; cd "$bu"
 if [ ! -f "$bu/Makefile" ]; then
   sed -i '/^development=/s/true/false/' /src-binutils/bfd/development.sh || true
+  # --disable-plugins is REQUIRED for Xtensa: with plugin support on, bfd's
+  # xtensa-dynconfig dlopen()s the chip config at link time (impossible in wasm →
+  # "could not be loaded: dynamic linking not enabled"). Disabled, bfd uses the
+  # overlay's static esp32 config (no env/-dynconfig → no error). Harmless for RISC-V.
   emconfigure /src-binutils/configure --target=$TARGET --host=wasm32 --build="$build_triple" \
     --enable-ld=default --disable-gold --disable-gdb --disable-gdbserver --disable-sim \
-    --disable-nls --disable-werror --disable-doc --disable-gprof \
+    --disable-nls --disable-werror --disable-doc --disable-gprof --disable-plugins \
     CC_FOR_BUILD=gcc CXX_FOR_BUILD=g++ MAKEINFO=missing
 fi
 emmake make -O -j"$nproc_n" all-bfd all-libiberty all-opcodes all-libsframe \
