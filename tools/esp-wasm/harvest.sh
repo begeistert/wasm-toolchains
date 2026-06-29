@@ -15,14 +15,15 @@ FQBN="$1"; TAG="$2"; GCCTARGET="$3"
 [ -n "$FQBN" ] && [ -n "$TAG" ] && [ -n "$GCCTARGET" ] || { echo "usage: harvest.sh <fqbn> <tag> <gccTarget>"; exit 2; }
 OUT=/out; mkdir -p "$OUT"; rm -f "$OUT/cc1plus-$TAG.txt" "$OUT/ld-$TAG.txt"
 
-# Discover the toolchain: packages/esp32/tools/<...gcc...>/<ver>/ holding the
-# cc1plus for $GCCTARGET. Glob both the unified (xtensa-esp-elf-gcc) and any
-# triple-named layout; pick the first cc1plus that matches the target.
-CC1=$(ls /root/.arduino15/packages/esp32/tools/*/*/libexec/gcc/${GCCTARGET}/*/cc1plus 2>/dev/null | head -1)
-[ -n "$CC1" ] || { echo "[$TAG] cc1plus for $GCCTARGET not found under packages/esp32/tools"; exit 1; }
-TCROOT=${CC1%/libexec/*}
-LD=$(ls "$TCROOT/${GCCTARGET}/bin/ld" "$TCROOT/bin/${GCCTARGET}-ld" 2>/dev/null | head -1)
-[ -n "$LD" ] || { echo "[$TAG] ld for $GCCTARGET not found"; exit 1; }
+# Discover the toolchain by content, not a fixed path — the esp tool tree nests an
+# extra triple dir (tools/<name>/<ver>/<triple>/libexec/...) and the linker the gcc
+# driver actually calls varies (bare `ld` under <triple>/bin vs the prefixed
+# <triple>-ld under bin). Find cc1plus, and wrap EVERY ld the driver might invoke.
+TOOLS=/root/.arduino15/packages/esp32/tools
+CC1=$(find "$TOOLS" -path "*/libexec/gcc/${GCCTARGET}/*/cc1plus" -type f 2>/dev/null | head -1)
+[ -n "$CC1" ] || { echo "[$TAG] cc1plus for $GCCTARGET not found under $TOOLS"; exit 1; }
+LDS=$(find "$TOOLS" -type f \( -name ld -o -name "${GCCTARGET}-ld" \) 2>/dev/null)
+[ -n "$LDS" ] || { echo "[$TAG] no ld for $GCCTARGET found under $TOOLS"; exit 1; }
 
 # Wrap a tool so each call dumps its expanded argv to a log, then exec the real one.
 wrap() {
@@ -40,7 +41,7 @@ EOF
   chmod +x "$real"
 }
 wrap "$CC1" "$OUT/cc1plus-$TAG.txt"
-wrap "$LD"  "$OUT/ld-$TAG.txt"
+for L in $LDS; do wrap "$L" "$OUT/ld-$TAG.txt"; done
 
 # Unique sketch name per board (arduino-cli derives its cache hash from the name).
 SK="/s/Big_$TAG"
