@@ -31,9 +31,12 @@ const IMAGE = process.env.ESPCAP_IMAGE || 'espcap:latest';
 const WORK = process.env.WORK || path.join(require('os').tmpdir(), 'espharvest');
 const ESPROOT = path.join(WORK, 'esproot');
 
-// Flatten the track into per-board harvest units: { chip, key, fqbn, tag, gccTarget }.
+// Flatten the track into per-board harvest units. nativeTarget is the triple
+// arduino-esp32 ships (what we WRAP to capture the native build — e.g. the unified
+// xtensa-esp-elf); gccTarget is the per-chip static triple we BUILT and ship (e.g.
+// xtensa-esp32-elf). They differ only for Xtensa.
 const UNITS = bundlesForTrack('esp-v').flatMap((t) =>
-  t.boards.map((b) => ({ chip: t.chip, gccTarget: t.gccTarget, ...b })));
+  t.boards.map((b) => ({ chip: t.chip, gccTarget: t.gccTarget, nativeTarget: t.nativeTarget || t.gccTarget, ...b })));
 
 const sh = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit' });
 const dockerRun = (extra) => sh('docker', ['run', '--rm', '-v', `${WORK}:/out`, IMAGE, ...extra]);
@@ -45,8 +48,8 @@ function harvest() {
   // has no library for). See tools/esp-wasm/bigsketch.ino.
   fs.copyFileSync(path.join(HERE, 'bigsketch.ino'), path.join(WORK, 'bigsketch.ino'));
   for (const u of UNITS) {
-    console.log(`\n=== harvest ${u.tag} (${u.fqbn}, ${u.gccTarget}) ===`);
-    dockerRun(['bash', '/out/harvest.sh', u.fqbn, u.tag, u.gccTarget]);
+    console.log(`\n=== harvest ${u.tag} (${u.fqbn}, native ${u.nativeTarget}) ===`);
+    dockerRun(['bash', '/out/harvest.sh', u.fqbn, u.tag, u.nativeTarget]);
   }
   console.log('\n=== tar 3rd-party library sources ===');
   dockerRun(['bash', '-lc', 'tar cf /out/arduinolibs.tar /root/Arduino/libraries 2>/dev/null || true']);
@@ -105,8 +108,10 @@ async function closure(unit, isys) {
   (function walk(d) { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
     const f = path.join(d, e.name); if (e.isDirectory()) walk(f);
     else base.set(f.slice(ESPROOT.length), fs.readFileSync(f)); } })(ESPROOT);
+  delete process.env.XTENSA_GNU_CONFIG;   // our static cc1plus must not look for the dynconfig plugin
   let argv = fs.readFileSync(path.join(WORK, `big-${unit.key}-cc1plus.txt`), 'utf8').split('\n')
-    .filter((l) => l !== '' && !l.startsWith('=== ') && !l.startsWith('--- @file') && !/cc1plus/.test(l));
+    .filter((l) => l !== '' && !l.startsWith('=== ') && !l.startsWith('--- @file') && !/cc1plus/.test(l))
+    .filter((l) => !/^-mdynconfig/.test(l));   // unified-toolchain flag our per-chip static gcc rejects
   const oi = argv.indexOf('-o'); if (oi >= 0) argv[oi + 1] = '/work/s.s';
   argv = ['-quiet', '-H', ...isys.flatMap((d) => ['-isystem', d]), ...argv.filter((x) => x !== '-quiet')];
   const log = [];
@@ -122,14 +127,14 @@ async function closure(unit, isys) {
 (async () => {
   if (!process.env.SKIP_HARVEST) harvest();
   extract();
-  // One -isystem list per gcc target (shared by that chip's boards).
+  // One -isystem list per NATIVE gcc target (the headers the native build used).
   const isysByTarget = {};
-  for (const u of UNITS) isysByTarget[u.gccTarget] ||= gincDirs(u.gccTarget);
-  fs.writeFileSync(path.join(WORK, 'ginc.txt'), (isysByTarget[UNITS[0].gccTarget] || []).join('\n') + '\n');
+  for (const u of UNITS) isysByTarget[u.nativeTarget] ||= gincDirs(u.nativeTarget);
+  fs.writeFileSync(path.join(WORK, 'ginc.txt'), (isysByTarget[UNITS[0].nativeTarget] || []).join('\n') + '\n');
   let empty = 0;
   for (const u of UNITS) {
     pickBlocks(u);
-    const { n, log, isys } = await closure(u, isysByTarget[u.gccTarget]);
+    const { n, log, isys } = await closure(u, isysByTarget[u.nativeTarget]);
     console.log(`closure ${u.key}: ${n} headers (${isys.length} -isystem dirs)`);
     if (n === 0) {
       empty++;
@@ -142,7 +147,7 @@ async function closure(unit, isys) {
   console.log('\n=== make-esp-dist ===');
   // Per-chip isystem differs; make-esp-dist reads ESP_ISYSTEM, so run it per chip.
   for (const t of bundlesForTrack('esp-v')) {
-    const isys = isysByTarget[t.gccTarget] || [];
+    const isys = isysByTarget[t.nativeTarget || t.gccTarget] || [];
     const ginc = path.join(WORK, `ginc-${t.chip}.txt`);
     fs.writeFileSync(ginc, isys.join('\n') + '\n');
     execFileSync('node', [path.join(HERE, 'make-esp-dist.cjs'), t.chip], {
