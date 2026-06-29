@@ -112,10 +112,11 @@ async function closure(unit, isys) {
   const log = [];
   await cc1plus({ arguments: argv, print: (s) => log.push(s), printErr: (s) => log.push(s), quit: () => {},
     preRun: [(m) => { for (const [p, b] of base) { const i = p.lastIndexOf('/'); if (i > 0) m.FS.mkdirTree(p.slice(0, i)); m.FS.writeFile(p, b); } m.FS.mkdirTree('/work'); }] });
+  process.exitCode = 0;   // don't let the Emscripten module's lingering exit code fail the run; we decide below
   const hdr = new Set();
   for (const l of log) { const mm = l.match(/^\.+\s+(\/.+)$/); if (mm) { const p = path.normalize(mm[1]); if (base.has(p)) hdr.add(p); } }
   fs.writeFileSync(path.join(WORK, `closure-big-${unit.key}.txt`), [...hdr].sort().join('\n'));
-  return hdr.size;
+  return { n: hdr.size, log, isys };
 }
 
 (async () => {
@@ -125,11 +126,19 @@ async function closure(unit, isys) {
   const isysByTarget = {};
   for (const u of UNITS) isysByTarget[u.gccTarget] ||= gincDirs(u.gccTarget);
   fs.writeFileSync(path.join(WORK, 'ginc.txt'), (isysByTarget[UNITS[0].gccTarget] || []).join('\n') + '\n');
+  let empty = 0;
   for (const u of UNITS) {
     pickBlocks(u);
-    const n = await closure(u, isysByTarget[u.gccTarget]);
-    console.log(`closure ${u.key}: ${n} headers`);
+    const { n, log, isys } = await closure(u, isysByTarget[u.gccTarget]);
+    console.log(`closure ${u.key}: ${n} headers (${isys.length} -isystem dirs)`);
+    if (n === 0) {
+      empty++;
+      console.error(`\n!!! closure ${u.key} EMPTY — diagnostics:`);
+      console.error(`  isystem dirs (${isys.length}):\n` + isys.map((d) => '    ' + d).join('\n'));
+      console.error(`  cc1plus -H output (last 30 lines):\n` + log.slice(-30).map((l) => '    ' + l).join('\n'));
+    }
   }
+  if (empty) { console.error(`\n${empty} board(s) produced an empty header closure — fix gincDirs/argv before bundling.`); process.exit(1); }
   console.log('\n=== make-esp-dist ===');
   // Per-chip isystem differs; make-esp-dist reads ESP_ISYSTEM, so run it per chip.
   for (const t of bundlesForTrack('esp-v')) {
