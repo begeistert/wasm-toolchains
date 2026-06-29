@@ -34,13 +34,13 @@ jobs:
           - chip: esp32c3
             target: riscv32-esp-elf
             overlay: ""
-            gcc: esp-13.2.0_20240530
-            binutils: esp-2.41.0_20240530
+            gcc: esp-14.2.0_20241119
+            binutils: esp-2.43.1_20260121
           - chip: esp32
             target: xtensa-esp32-elf
             overlay: esp32
-            gcc: esp-13.2.0_20240530
-            binutils: esp-2.41.0_20240530
+            gcc: esp-14.2.0_20241119
+            binutils: esp-2.43.1_20260121
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
