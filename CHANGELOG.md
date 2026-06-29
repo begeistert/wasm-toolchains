@@ -5,7 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [esp-v1.0.0 · llvm-v1.0.0 · pico-v1.1.0] - 2026-06-29
+
+First release of the ESP32 (Xtensa) / ESP32-C3 (RISC-V) and LLVM IR tracks, plus
+the Pico wireless overlay — alongside the build/publish modularization (declarative
+target registry + reusable release workflow). The ESP32 Xtensa cc1plus is built as
+the per-chip static `xtensa-esp32-elf` target (esp32 config baked in via the
+arduino-esp32 overlay) so it needs no dynconfig plugin in WebAssembly; verified
+flash-app harvest with a 146-header closure.
 
 ### Added
 
