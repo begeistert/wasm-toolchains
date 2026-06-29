@@ -44,6 +44,15 @@ if [ -n "$XTENSA_OVERLAY" ]; then
   [ "$applied" = 1 ] || echo "WARN: xtensa overlay $XTENSA_OVERLAY not found under $ovd — build may target generic xtensa"
 fi
 
+# ── gcc 13.2 source fixups for the em++/clang wasm cross build ──────────────
+# The per-target selftest sources (config/<arch>/*-selftests.cc) are linked into
+# cc1 unconditionally by the t-<arch> makefile fragment, but their includes don't
+# compile under em++/clang. With --enable-checking=release the selftests are never
+# run and the code that references them is compiled out, so blank the sources.
+for f in $(find /src/gcc/config -name '*-selftests.cc' 2>/dev/null); do
+  echo "/* selftests stubbed for the static wasm cross build (checking=release) */" > "$f"
+done
+
 # ── DEPS: GMP / MPFR / MPC → wasm32 ─────────────────────────────────────────
 if [ ! -f "$wasmdeps/lib/libmpc.a" ]; then
   cd /deps/gmp-${GMP_VER};   emconfigure ./configure --build="$build_triple" --host=wasm32 --prefix="$wasmdeps" --disable-shared --enable-static --disable-assembly CC_FOR_BUILD=gcc; emmake make -j"$nproc_n"; emmake make install
