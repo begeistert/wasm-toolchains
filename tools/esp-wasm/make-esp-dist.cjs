@@ -112,13 +112,22 @@ function buildBundle(t) {
       for (const f of fs.readdirSync(sdkLd)) if (/\.(ld|a)$/.test(f)) addLink(norm(path.join(vfsLd, f)));
       ldRaw.unshift('-L' + vfsLd);
     }
-    // Normalize -L paths (the captured argv has un-normalized `bin/../lib/...` that
-    // wasm-ld's MEMFS search won't resolve to where the libs were collected) and
-    // strip the dynconfig options (cc1plus -mdynconfig / ld --dynconfig select the
-    // plugin path our static per-chip toolchain rejects).
+    // Make the ld argv self-contained for a wasm host. The captured argv carries a
+    // --sysroot that breaks wasm-ld's -L search in MEMFS (so bare `-T <script>` and
+    // `-l<lib>` don't resolve) and un-normalized `bin/../lib/...` paths MEMFS can't
+    // walk. So: normalize every path, and rewrite `-T <name>` / `-l<name>` to the
+    // absolute path of the shipped link input. Also strip the dynconfig options
+    // (cc1plus -mdynconfig / ld --dynconfig select the plugin path the static
+    // per-chip toolchain rejects).
     const cc1Argv = argvLines(cfg.cc1, /cc1plus/).filter((l) => !/^-mdynconfig/.test(l));
+    const byName = new Map(b.link.map((r) => [path.basename(r), r.replace(/^vfs/, '')]));
     const ldArgv = ldRaw.filter((l) => !/^--?dynconfig/.test(l))
-      .map((a) => a.startsWith('-L') ? '-L' + norm(a.slice(2)) : a);
+      .map((a) => a.startsWith('-L') ? '-L' + norm(a.slice(2)) : (a.startsWith('/') ? norm(a) : a));
+    for (let i = 0; i < ldArgv.length; i++) {
+      if (ldArgv[i] === '-T' && byName.has(ldArgv[i + 1])) ldArgv[i + 1] = byName.get(ldArgv[i + 1]);
+      const lm = ldArgv[i].match(/^-l(.+)$/);
+      if (lm && byName.has('lib' + lm[1] + '.a')) ldArgv[i] = byName.get('lib' + lm[1] + '.a');
+    }
 
     b.templates.cc1plus = emit(`templates/${board.key}/cc1plus.argv`, Buffer.from(cc1Argv.join('\n')));
     b.templates.ld = emit(`templates/${board.key}/ld.argv`, Buffer.from(ldArgv.join('\n')));
