@@ -82,6 +82,7 @@ if [ ! -f "$gw/Makefile" ]; then
     --disable-bootstrap --disable-shared --disable-threads --disable-nls \
     --disable-libssp --disable-libada --disable-libquadmath --disable-libgomp \
     --disable-libvtv --enable-lto --disable-libstdcxx --without-headers --disable-werror \
+    --enable-checking=release \
     CC_FOR_BUILD=gcc CXX_FOR_BUILD=g++ MAKEINFO=missing
 fi
 HOSTCFLAGS="-DHAVE_PSIGNAL=1 -DELIDE_CODE -Os"
