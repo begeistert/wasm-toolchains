@@ -68,21 +68,26 @@ function extract() {
   for (const u of UNITS) untar(path.join(WORK, `cacheb-${u.tag}.tar`));
 }
 
-// Discover the toolchain -isystem dirs for one gcc target from the extracted tree.
-function gincDirs(gccTarget) {
-  const toolsBase = path.join(ESPROOT, 'root/.arduino15/packages/esp32/tools');
-  const found = [];
-  const want = [`${gccTarget}/include/c++`, `${gccTarget}/include`, 'include', 'include-fixed'];
-  (function walk(d, depth) {
-    if (depth > 8 || !fs.existsSync(d)) return;
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      if (!e.isDirectory()) continue;
-      const f = path.join(d, e.name);
-      if (want.some((w) => f.endsWith(w)) && f.includes(gccTarget)) found.push('/' + path.relative(ESPROOT, f));
-      walk(f, depth + 1);
-    }
-  })(toolsBase, 0);
-  return [...new Set(found)];
+// The C/C++ -isystem search path for one board, derived from the gcc MULTILIB path
+// the native link used (e.g. .../lib/gcc/<tgt>/<ver>/esp32/no-rtti). This pins the
+// versioned c++ headers (<algorithm> etc.) AND the matching c++config.h multilib —
+// our wasm cc1plus's built-in path points at the build prefix, so without these the
+// closure (cc1plus -H) fatals at `#include <algorithm>` and captures a partial set.
+function cxxIncludeDirs(unit) {
+  const tgt = unit.nativeTarget;
+  const ld = fs.readFileSync(path.join(WORK, `big-${unit.key}-ld.txt`), 'utf8').split('\n');
+  const re = new RegExp(`^(.*)/lib/gcc/${tgt}/([^/]+)/(.+)$`);
+  let tcRoot, ver, multilib;
+  for (const l of ld) {
+    if (!l.startsWith('-L')) continue;
+    const mm = path.normalize(l.slice(2)).match(re);   // normalize removes bin/../lib
+    if (mm) { [, tcRoot, ver, multilib] = mm; break; }
+  }
+  if (!tcRoot) return [];
+  const cxx = `${tcRoot}/${tgt}/include/c++/${ver}`;
+  const gl = `${tcRoot}/lib/gcc/${tgt}/${ver}`;
+  return [cxx, `${cxx}/${tgt}/${multilib}`, `${cxx}/backward`, `${gl}/include`, `${gl}/include-fixed`, `${tcRoot}/${tgt}/include`]
+    .filter((d) => fs.existsSync(path.join(ESPROOT, d)));
 }
 
 function pickBlocks(unit) {
@@ -127,27 +132,28 @@ async function closure(unit, isys) {
 (async () => {
   if (!process.env.SKIP_HARVEST) harvest();
   extract();
-  // One -isystem list per NATIVE gcc target (the headers the native build used).
-  const isysByTarget = {};
-  for (const u of UNITS) isysByTarget[u.nativeTarget] ||= gincDirs(u.nativeTarget);
-  fs.writeFileSync(path.join(WORK, 'ginc.txt'), (isysByTarget[UNITS[0].nativeTarget] || []).join('\n') + '\n');
+  // -isystem is per board (the multilib differs); derived after pickBlocks from the
+  // captured ld argv. Closures with a near-empty result mean the c++ path is wrong.
+  const isysByChip = {};
   let empty = 0;
   for (const u of UNITS) {
     pickBlocks(u);
-    const { n, log, isys } = await closure(u, isysByTarget[u.nativeTarget]);
+    const isys = cxxIncludeDirs(u);
+    isysByChip[u.chip] = isys;
+    const { n, log } = await closure(u, isys);
     console.log(`closure ${u.key}: ${n} headers (${isys.length} -isystem dirs)`);
-    if (n === 0) {
+    if (n < 20) {
       empty++;
-      console.error(`\n!!! closure ${u.key} EMPTY — diagnostics:`);
+      console.error(`\n!!! closure ${u.key} too small (${n}) — diagnostics:`);
       console.error(`  isystem dirs (${isys.length}):\n` + isys.map((d) => '    ' + d).join('\n'));
       console.error(`  cc1plus -H output (last 30 lines):\n` + log.slice(-30).map((l) => '    ' + l).join('\n'));
     }
   }
-  if (empty) { console.error(`\n${empty} board(s) produced an empty header closure — fix gincDirs/argv before bundling.`); process.exit(1); }
+  if (empty) { console.error(`\n${empty} board(s) produced a too-small header closure — fix cxxIncludeDirs/argv before bundling.`); process.exit(1); }
   console.log('\n=== make-esp-dist ===');
   // Per-chip isystem differs; make-esp-dist reads ESP_ISYSTEM, so run it per chip.
   for (const t of bundlesForTrack('esp-v')) {
-    const isys = isysByTarget[t.nativeTarget || t.gccTarget] || [];
+    const isys = isysByChip[t.chip] || [];
     const ginc = path.join(WORK, `ginc-${t.chip}.txt`);
     fs.writeFileSync(ginc, isys.join('\n') + '\n');
     execFileSync('node', [path.join(HERE, 'make-esp-dist.cjs'), t.chip], {
