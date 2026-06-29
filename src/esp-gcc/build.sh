@@ -25,21 +25,23 @@ printf 'am_cv_ar_has_plugin=no\nam_cv_ranlib_has_plugin=no\n' > "$_site"; export
 export CC_FOR_BUILD=gcc CXX_FOR_BUILD=g++ HOST_CC=gcc HOST_CXX=g++
 
 # ── XTENSA: apply the chip overlay (gives binutils/gcc the esp32 config) ─────
-# Espressif's crosstool flow copies the overlay's config into the gcc + binutils
-# source trees and exports XTENSA_GNU_CONFIG. Upstream gcc has no esp32 config, so
-# this step is what makes the Xtensa backend target the ESP32 LX6.
+# Apply the chip overlay STATICALLY into the gcc + binutils source trees, the way
+# crosstool-NG does. Upstream gcc has no esp32 config; the overlay's xtensa-config.h
+# (etc.) provides it. We deliberately do NOT export XTENSA_GNU_CONFIG: that selects
+# Espressif's *dynamic* config, which dlopen()s a plugin at runtime — impossible in
+# a static wasm build (cc1plus then aborts: "XTENSA_GNU_CONFIG is defined but plugin
+# support is disabled"). With the overlay baked in and the env var unset, gcc
+# compiles the esp32 config statically and needs no plugin.
+#
+# Overlay layout: /src-overlays/xtensa_<chip>/{gcc,binutils}/ mirror each source
+# root (e.g. xtensa_esp32/gcc/gcc/config/xtensa/xtensa-config.h → /src/gcc/...).
 if [ -n "$XTENSA_OVERLAY" ]; then
-  ov=/src-overlays/xtensa_${XTENSA_OVERLAY}/gcc/gcc/config/xtensa/xtensa-config.h
-  if [ -f "$ov" ]; then
-    export XTENSA_GNU_CONFIG="$ov"
-    # Overlay the binutils + gcc tree fragments the overlay ships, if present.
-    for tree in binutils gcc; do
-      src_ov=/src-overlays/xtensa_${XTENSA_OVERLAY}/$tree
-      [ -d "$src_ov" ] && cp -rf "$src_ov"/. /src${tree#binutils}/ 2>/dev/null || true
-    done
-  else
-    echo "WARN: xtensa overlay $XTENSA_OVERLAY not found at $ov — build may target generic xtensa"
-  fi
+  ovd=/src-overlays/xtensa_${XTENSA_OVERLAY}
+  unset XTENSA_GNU_CONFIG
+  applied=0
+  [ -d "$ovd/gcc" ]      && { cp -rf "$ovd/gcc/."      /src/;          applied=1; }
+  [ -d "$ovd/binutils" ] && { cp -rf "$ovd/binutils/." /src-binutils/; applied=1; }
+  [ "$applied" = 1 ] || echo "WARN: xtensa overlay $XTENSA_OVERLAY not found under $ovd — build may target generic xtensa"
 fi
 
 # ── DEPS: GMP / MPFR / MPC → wasm32 ─────────────────────────────────────────
