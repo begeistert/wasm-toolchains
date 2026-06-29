@@ -48,7 +48,10 @@ SK="/s/Big_$TAG"
 mkdir -p "$SK"
 cp "$OUT/bigsketch.ino" "$SK/Big_$TAG.ino"
 
-arduino-cli compile -b "esp32:esp32:$FQBN" --output-dir "$OUT/bo-$TAG" "$SK" \
+# PartitionScheme=huge_app (3 MB app) so the comprehensive kitchen-sink (WiFi + BLE
+# + networking + Tier-1) links without tripping the default 1.3 MB app-size check —
+# the harvest needs the full closure + link inputs, not a shippable partition layout.
+arduino-cli compile -b "esp32:esp32:$FQBN:PartitionScheme=huge_app" --output-dir "$OUT/bo-$TAG" "$SK" \
   > "$OUT/clog-$TAG.log" 2>&1 || { echo "[$TAG] COMPILE FAILED"; tail -25 "$OUT/clog-$TAG.log"; exit 1; }
 
 # The harvestable reference is the APP image (esptool also makes a .merged.bin with
