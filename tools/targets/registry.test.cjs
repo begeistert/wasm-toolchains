@@ -70,7 +70,9 @@ eq(
 
 // ── ESP track: two independent chips (different ISAs, no shared tools) ───────
 eq(reg.bundlesForTrack('esp-v').map((t) => t.chip).sort(), ['esp32', 'esp32c3'], 'esp track chips drifted');
-eq(reg.target('esp32-toolchain').gccTarget, 'xtensa-esp-elf', 'esp32 gcc target drifted');
+// Xtensa: BUILD the per-chip static triple, HARVEST the unified native triple.
+eq(reg.target('esp32-toolchain').gccTarget, 'xtensa-esp32-elf', 'esp32 build target drifted');
+eq(reg.target('esp32-toolchain').nativeTarget, 'xtensa-esp-elf', 'esp32 native (harvest) target drifted');
 eq(reg.target('esp32c3-toolchain').gccTarget, 'riscv32-esp-elf', 'esp32c3 gcc target drifted');
 eq(reg.target('esp32-toolchain').flash.app, '0x10000', 'esp32 app flash offset drifted');
 

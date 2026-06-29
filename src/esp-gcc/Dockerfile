@@ -17,11 +17,11 @@ FROM emscripten/emsdk:4.0.22 AS builder
 
 ARG TARGET=riscv32-esp-elf
 ARG XTENSA_OVERLAY=
-# Espressif fork refs; pin to the toolchain release that matches the core. gcc is
-# a branch/tag; binutils is published as tags named esp-<ver>_<date> (no
-# esp-2.43_<date> — the 2.43 line is esp-2.43.1_<date>).
-ARG GCC_BRANCH=esp-14.2.0_20241119
-ARG BINUTILS_BRANCH=esp-2.43.1_20260121
+# Espressif fork refs; pin to the toolchain release that matches arduino-esp32's
+# core (3.1.1 → the 2405 train, gcc 13.2.0 / binutils 2.41.0). Overridden per chip
+# by the CI matrix. binutils is published as esp-<ver>_<date> tags.
+ARG GCC_BRANCH=esp-13.2.0_20240530
+ARG BINUTILS_BRANCH=esp-2.41.0_20240530
 ARG GMP_VER=6.3.0
 ARG MPFR_VER=4.2.1
 ARG MPC_VER=1.3.1

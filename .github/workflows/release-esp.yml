@@ -27,13 +27,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # We build the per-chip STATIC target (xtensa-esp32-elf), not the unified
+        # dynconfig xtensa-esp-elf — a static wasm build can't dlopen the config
+        # plugin. gcc/binutils pinned to arduino-esp32 3.1.1's 2405 train.
         include:
           - chip: esp32c3
             target: riscv32-esp-elf
             overlay: ""
+            gcc: esp-13.2.0_20240530
+            binutils: esp-2.41.0_20240530
           - chip: esp32
-            target: xtensa-esp-elf
+            target: xtensa-esp32-elf
             overlay: esp32
+            gcc: esp-13.2.0_20240530
+            binutils: esp-2.41.0_20240530
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
@@ -43,6 +50,8 @@ jobs:
           docker buildx build --progress=plain \
             --build-arg=TARGET=${{ matrix.target }} \
             --build-arg=XTENSA_OVERLAY=${{ matrix.overlay }} \
+            --build-arg=GCC_BRANCH=${{ matrix.gcc }} \
+            --build-arg=BINUTILS_BRANCH=${{ matrix.binutils }} \
             --cache-to=type=gha,mode=max,scope=esp-${{ matrix.chip }} \
             --cache-from=type=gha,scope=esp-${{ matrix.chip }} \
             --output=type=local,dest=dist-${{ matrix.chip }}-gcc \
