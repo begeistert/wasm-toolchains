@@ -77,10 +77,13 @@ jobs:
         run: docker build -t espcap:latest src/espcap
       - name: Harvest + build both esp bundles
         run: node tools/esp-wasm/harvest.cjs
+      # include-hidden-files: the vfs lives under vfs/root/.arduino15 + /.cache
+      # (dotted dirs from the arduino-cli mirror); upload-artifact@v4 drops hidden
+      # files by default, which would ship a tools-only bundle with no headers/libs.
       - uses: actions/upload-artifact@v4
-        with: { name: dist-esp32-web, path: dist-esp32-web/ }
+        with: { name: dist-esp32-web, path: dist-esp32-web/, include-hidden-files: true }
       - uses: actions/upload-artifact@v4
-        with: { name: dist-esp32c3-web, path: dist-esp32c3-web/ }
+        with: { name: dist-esp32c3-web, path: dist-esp32c3-web/, include-hidden-files: true }
 
   release:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'esp-v')
