@@ -119,7 +119,13 @@ function buildBundle(t) {
     // absolute path of the shipped link input. Also strip the dynconfig options
     // (cc1plus -mdynconfig / ld --dynconfig select the plugin path the static
     // per-chip toolchain rejects).
-    const cc1Argv = argvLines(cfg.cc1, /cc1plus/).filter((l) => !/^-mdynconfig/.test(l));
+    // -fno-use-cxa-atexit: global C++ objects' dtor registration otherwise emits
+    // __cxa_atexit(dtor, obj, &__dso_handle), but no esp link input defines
+    // __dso_handle — so a user sketch with a global object (e.g. `WiFiClient c;`)
+    // wouldn't link. Registering via atexit instead avoids the reference (same fix
+    // recipe-pico applies host-side). The precompiled core/IDF libs are already
+    // built this way, so only the freshly-compiled sketch needs it.
+    const cc1Argv = ['-fno-use-cxa-atexit', ...argvLines(cfg.cc1, /cc1plus/).filter((l) => !/^-mdynconfig/.test(l))];
     const byName = new Map(b.link.map((r) => [path.basename(r), r.replace(/^vfs/, '')]));
     const ldArgv = ldRaw.filter((l) => !/^--?dynconfig/.test(l))
       .map((a) => a.startsWith('-L') ? '-L' + norm(a.slice(2)) : (a.startsWith('/') ? norm(a) : a));
