@@ -17,6 +17,10 @@ dist-web/
 dist-arm-gcc/
 dist-pico-web/
 dist-pico-wireless/
+# Permissive clang Pico track: the ARM link inputs (compiler-rt + picolibc,
+# src/pico-clang/build.sh) and the assembled bundle. Shipped via Releases.
+dist-pico-clang-armlibs/
+dist-pico-clang-web/
 dist-llvm/
 dist-llvm-web/
 dist-esp32-gcc/

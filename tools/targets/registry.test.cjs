@@ -62,6 +62,7 @@ eq(
     { id: 'esp32-toolchain',   tar: 'esp32wasm.tar',   requires: null },
     { id: 'esp32c3-toolchain', tar: 'esp32c3wasm.tar', requires: null },
     { id: 'llvm-toolchain',    tar: 'llvmwasm.tar',    requires: null },
+    { id: 'pico-clang-toolchain', tar: 'picoclangwasm.tar', requires: null },
     { id: 'pico-toolchain',    tar: 'picowasm.tar',    requires: null },
     { id: 'pico-wireless',     tar: 'picowwasm.tar',   requires: 'pico-toolchain' },
   ],

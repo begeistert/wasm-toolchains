@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Permissive clang Pico track (WIP)** (`pico-clang-toolchain` → `picoclangwasm.tar`,
+  tags `pico-clang-v*`): a non-GPL replacement for the GPLv3 `pico-toolchain`
+  (`src/arm-gcc`, GCC). `clang.wasm` replaces the GPL `cc1plus` (frontend +
+  integrated assembler — no separate `as`), `lld.wasm` replaces GPL `ld`, and the
+  two GPL/newlib runtime libraries are swapped for permissive ones:
+  **compiler-rt** builtins (Apache-2.0-with-LLVM-exception) for libgcc and
+  **picolibc** (BSD) for newlib. `src/pico-clang/` (build.sh + Dockerfile)
+  cross-builds those TARGET (arm) libraries for both boards — `armv6-m`
+  (RP2040/Cortex-M0+) and `armv8-m.main+dsp+fp` (RP2350/Cortex-M33); the wasm
+  frontend/linker come from the `llvm` track. `tools/pico-clang-wasm/`
+  (recipe-pico-clang.js + make-pico-clang-dist.cjs + verify-pico-clang.cjs)
+  drives and validates the pipeline. **Verified**: `clang → lld → compiler-rt +
+  picolibc` compiles and links a bare-metal blink to a valid ARM ELF
+  (`e_machine = 40`) and UF2 (family `0xe48bff56`/`0xe48bff59`) for both boards
+  (`tools/pico-clang-wasm/verify-pico-clang.cjs`, demo in `demo/`). **Not yet
+  done**: the arduino-pico core recompiled with clang (the precompiled `core.a`
+  the GCC track ships) — see `docs/CLANG_PICO.md`. AVR and ESP32-classic (Xtensa)
+  stay on GCC (clang AVR is experimental; mainline clang has no Xtensa backend).
+
 ## [esp-v1.0.0 · llvm-v1.0.0 · pico-v1.1.0] - 2026-06-29
 
 First release of the ESP32 (Xtensa) / ESP32-C3 (RISC-V) and LLVM IR tracks, plus
