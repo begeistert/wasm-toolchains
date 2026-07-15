@@ -1,0 +1,8 @@
+// Minimal freestanding <limits> shim — arduino-pico stdlib_noniso.cpp uses only
+// std::numeric_limits<T>::epsilon(); we build without libc++ (-nostdinc++).
+#pragma once
+namespace std {
+template<class T> struct numeric_limits { static constexpr T epsilon() { return T(0); } };
+template<> struct numeric_limits<double> { static constexpr double epsilon() { return 2.2204460492503131e-16; } };
+template<> struct numeric_limits<float>  { static constexpr float  epsilon() { return 1.19209290e-7F; } };
+}

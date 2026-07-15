@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bootable clang-built Arduino firmware (pico-clang v0.2.0)** — a real
+  Arduino-API sketch (`pinMode`/`digitalWrite`/`millis`/`delay`/`Serial.println`/
+  `String`) now compiles with clang and links to a **genuinely bootable RP2040
+  UF2**, entirely on the permissive stack: clang-assembled **boot2** (pico-sdk
+  `boot2_w25q080.S`, BSD, CRC32-checksummed by the SDK's own `pad_checksum` — the
+  bootrom accepts it, CRC byte-identical to the gcc build) + the **real upstream
+  Arduino core** (ArduinoCore-API `Common`/`Print`/`String` and arduino-pico
+  `stdlib_noniso.cpp`, clang-compiled) + a small permissive platform layer
+  (`core/glue/`) over the RP2040 SIO/UART registers + picolibc + compiler-rt.
+  `src/pico-clang/build-core.sh` builds it; `tools/pico-clang-wasm/verify-core-boot.cjs`
+  proves the artifact is bootable (valid boot2 CRC + vector table). RP2350
+  (armv8-m.main) compiles and links the same core with clang (valid ELF), but a
+  *bootable* RP2350 image still needs the SDK's IMAGE_DEF block — see
+  `docs/CLANG_PICO.md`. Ships `lib/<board>/libcore-arduino-clang.a` in the bundle.
+  (Correction to the prior iteration: an SDK `pico_stdlib` blink reported as
+  "clang-built" was actually `arm-none-eabi-gcc`; the bootable artifact here is
+  genuinely clang-built and CRC-verified.)
+
 - **Permissive clang Pico track (WIP)** (`pico-clang-toolchain` → `picoclangwasm.tar`,
   tags `pico-clang-v*`): a non-GPL replacement for the GPLv3 `pico-toolchain`
   (`src/arm-gcc`, GCC). `clang.wasm` replaces the GPL `cc1plus` (frontend +
