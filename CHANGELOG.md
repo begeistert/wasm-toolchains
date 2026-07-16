@@ -5,6 +5,52 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Bootable clang-built Arduino firmware (pico-clang v0.2.0)** — a real
+  Arduino-API sketch (`pinMode`/`digitalWrite`/`millis`/`delay`/`Serial.println`/
+  `String`) now compiles with clang and links to a **genuinely bootable RP2040
+  UF2**, entirely on the permissive stack: clang-assembled **boot2** (pico-sdk
+  `boot2_w25q080.S`, BSD, CRC32-checksummed by the SDK's own `pad_checksum` — the
+  bootrom accepts it, CRC byte-identical to the gcc build) + the **real upstream
+  Arduino core** (ArduinoCore-API `Common`/`Print`/`String` and arduino-pico
+  `stdlib_noniso.cpp`, clang-compiled) + a small permissive platform layer
+  (`core/glue/`) over the RP2040 SIO/UART registers + picolibc + compiler-rt.
+  `src/pico-clang/build-core.sh` builds it (board-aware); `tools/pico-clang-wasm/
+  verify-core-boot.cjs` proves the artifact is bootable (valid boot2 CRC + vector
+  table). **RP2350 (Pico 2)** now also produces a bootable image: `core/glue/
+  rp2350_blocks.S` clang-assembles the pico-sdk **IMAGE_DEF block loop** (RP2350
+  has no boot2 — the bootrom scans the first 4 KB), placed by `link-rp2350.ld`;
+  `verify-core-boot-rp2350.cjs` validates the loop (marker `0xffffded3`, IMAGE_TYPE
+  `0x42` flags `0x1021` = EXE|Secure|Arm|RP2350, loop closes, family `0xe48bff59`).
+  The clang IMAGE_TYPE word is byte-identical (`0x10210142`) to the SDK's own —
+  *structurally validated, not hardware-booted* (no physical RP2350 here). Ships
+  `lib/<board>/libcore-arduino-clang.a` in the bundle.
+  (Correction to the prior iteration: an SDK `pico_stdlib` blink reported as
+  "clang-built" was actually `arm-none-eabi-gcc`; the bootable artifact here is
+  genuinely clang-built and CRC-verified.)
+
+- **Permissive clang Pico track (WIP)** (`pico-clang-toolchain` → `picoclangwasm.tar`,
+  tags `pico-clang-v*`): a non-GPL replacement for the GPLv3 `pico-toolchain`
+  (`src/arm-gcc`, GCC). `clang.wasm` replaces the GPL `cc1plus` (frontend +
+  integrated assembler — no separate `as`), `lld.wasm` replaces GPL `ld`, and the
+  two GPL/newlib runtime libraries are swapped for permissive ones:
+  **compiler-rt** builtins (Apache-2.0-with-LLVM-exception) for libgcc and
+  **picolibc** (BSD) for newlib. `src/pico-clang/` (build.sh + Dockerfile)
+  cross-builds those TARGET (arm) libraries for both boards — `armv6-m`
+  (RP2040/Cortex-M0+) and `armv8-m.main+dsp+fp` (RP2350/Cortex-M33); the wasm
+  frontend/linker come from the `llvm` track. `tools/pico-clang-wasm/`
+  (recipe-pico-clang.js + make-pico-clang-dist.cjs + verify-pico-clang.cjs)
+  drives and validates the pipeline. **Verified**: `clang → lld → compiler-rt +
+  picolibc` compiles and links a bare-metal blink to a valid ARM ELF
+  (`e_machine = 40`) and UF2 (family `0xe48bff56`/`0xe48bff59`) for both boards
+  (`tools/pico-clang-wasm/verify-pico-clang.cjs`, demo in `demo/`). **Not yet
+  done**: the arduino-pico core recompiled with clang (the precompiled `core.a`
+  the GCC track ships) — see `docs/CLANG_PICO.md`. AVR and ESP32-classic (Xtensa)
+  stay on GCC (clang AVR is experimental; mainline clang has no Xtensa backend).
+
 ## [esp-v1.0.0 · llvm-v1.0.0 · pico-v1.1.0] - 2026-06-29
 
 First release of the ESP32 (Xtensa) / ESP32-C3 (RISC-V) and LLVM IR tracks, plus

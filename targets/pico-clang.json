@@ -1,0 +1,25 @@
+{
+  "id": "pico-clang-toolchain",
+  "title": "Pico (clang, permissive)",
+  "track": "pico-clang-v",
+  "arch": "arm",
+  "wip": true,
+  "llvm": "19.1.7",
+  "picolibc": "1.8.11",
+  "license": "Apache-2.0-with-LLVM-exception + BSD (permissive)",
+  "buildContext": "src/pico-clang",
+  "distDir": "dist-pico-clang-web",
+  "tar": "picoclangwasm.tar",
+  "output": "uf2",
+  "comment": "PERMISSIVE (non-GPL) clang/LLVM replacement for the GPL pico-toolchain (src/arm-gcc). clang.wasm replaces cc1plus (frontend + integrated-as), lld.wasm replaces ld, compiler-rt (Apache-2.0) replaces libgcc, picolibc (BSD) replaces newlib. v0.2.0: a real Arduino-API sketch compiles with clang and links to a BOOTABLE UF2 for BOTH boards — RP2040 (clang-assembled boot2 + CRC, verify-core-boot.cjs) and RP2350 (clang-assembled IMAGE_DEF block loop, family 0xe48bff59, verify-core-boot-rp2350.cjs; IMAGE_TYPE byte-identical to the SDK, structurally validated not HW-booted). See src/pico-clang/build-core.sh + docs/CLANG_PICO.md.",
+  "core": { "lib": "libcore-arduino-clang.a", "sources": "ArduinoCore-API (Common/Print/String) + arduino-pico stdlib_noniso + core/glue platform layer", "boot": { "pico": "clang-assembled pico-sdk boot2 (BSD) + CRC", "pico2": "clang-assembled pico-sdk IMAGE_DEF block loop (BSD)" } },
+  "wasmTools": [
+    { "name": "clang", "from": "clang", "role": "frontend+as (replaces cc1plus+gas)" },
+    { "name": "lld", "from": "llvm", "role": "linker (replaces ld; -flavor gnu)" },
+    { "name": "llvm-objcopy", "from": "llvm", "role": "elf -> bin (replaces objcopy)" }
+  ],
+  "boards": [
+    { "key": "pico",  "fqbn": "rpipico",  "tag": "pico",  "mcu": "rp2040", "family": "0xe48bff56", "triple": "thumbv6m-none-eabi",    "clangFlags": ["-mcpu=cortex-m0plus", "-mfloat-abi=soft"] },
+    { "key": "pico2", "fqbn": "rpipico2", "tag": "pico2", "mcu": "rp2350", "family": "0xe48bff59", "triple": "armv8m.main-none-eabi", "clangFlags": ["-mcpu=cortex-m33", "-mfloat-abi=softfp", "-march=armv8m.main+dsp+fp"] }
+  ]
+}
