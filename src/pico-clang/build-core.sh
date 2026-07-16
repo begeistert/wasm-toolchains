@@ -43,45 +43,70 @@ PICO_SDK=${PICO_SDK:?set PICO_SDK}
 ARDUINO_PICO=${ARDUINO_PICO:?set ARDUINO_PICO}
 GLUE=${GLUE:?set GLUE to tools/pico-clang-wasm/core/glue}
 SKETCH=${SKETCH:?set SKETCH to the sketch .cpp}
+BOARD=${BOARD:-pico}                # pico (RP2040) | pico2 (RP2350)
 OUT=${OUT:-./out-core}
 LLVM_BIN=${LLVM_BIN:-$TC/bin}
-SR=${SYSROOT_V6M:-$TC/lib/clang-runtimes/arm-none-eabi/armv6m_soft_nofp}
 API="$ARDUINO_PICO/ArduinoCore-API/api"
 CORE="$ARDUINO_PICO/cores/rp2040"
-B2="$PICO_SDK/src/rp2040/boot_stage2"
-
+GEN="${PICO_BASE_GEN:-$PICO_SDK/../sdk-blink/build-pico/generated/pico_base}"  # pico.h version headers
 mkdir -p "$OUT"; OUT=$(realpath "$OUT")
-CF="--target=armv6m-none-eabi -mcpu=cortex-m0plus -mfloat-abi=soft -Os -ffreestanding \
-    -nostdlib -nostdinc++ -fno-exceptions -fno-rtti -fno-threadsafe-statics \
+
+# per-board target: triple/cpu flags, sysroot, UF2 family, and boot mechanism.
+if [ "$BOARD" = "pico2" ]; then
+  TRIPLE="armv8m.main-none-eabi"; CPU="-mcpu=cortex-m33 -mfloat-abi=softfp -march=armv8m.main+dsp+fp"
+  SR=${SYSROOT:-$TC/lib/clang-runtimes/arm-none-eabi/armv8m.main_soft_nofp}
+  FAMILY=0xe48bff59; LINK="$GLUE/link-rp2350.ld"; BOOTOBJ="$OUT/rp2350_blocks.o"
+else
+  TRIPLE="armv6m-none-eabi"; CPU="-mcpu=cortex-m0plus -mfloat-abi=soft"
+  SR=${SYSROOT:-$TC/lib/clang-runtimes/arm-none-eabi/armv6m_soft_nofp}
+  FAMILY=0xe48bff56; LINK="$GLUE/link.ld"; BOOTOBJ="$OUT/boot2.o"
+fi
+CF="--target=$TRIPLE $CPU -Os -ffreestanding -nostdlib -nostdinc++ \
+    -fno-exceptions -fno-rtti -fno-threadsafe-statics \
     -I$GLUE -I$GLUE/cxxshim -I$API -I$API/deprecated-avr-comp --sysroot=$SR"
 
-# ── 1. boot2 (BSD) — assemble with clang, CRC32 via the SDK's pad_checksum ──
-B2INC="-I$B2/include -I$B2/asminclude -I$PICO_SDK/src/rp2040/hardware_regs/include \
-  -I$PICO_SDK/src/rp2_common/hardware_base/include -I$PICO_SDK/src/common/pico_base_headers/include \
-  -I$PICO_SDK/src/boards/include -I$PICO_SDK/src/rp2040/pico_platform/include \
-  -I$PICO_SDK/src/rp2_common/pico_platform_compiler/include \
-  -I$PICO_SDK/src/rp2_common/pico_platform_panic/include \
-  -I$PICO_SDK/src/rp2_common/pico_platform_sections/include"
-"$LLVM_BIN/clang" --target=armv6m-none-eabi -mcpu=cortex-m0plus -mfloat-abi=soft -nostdlib \
-  $B2INC -c "$B2/compile_time_choice.S" -o "$OUT/bs2.o"
-"$LLVM_BIN/ld.lld" -T "$B2/boot_stage2.ld" --build-id=none -o "$OUT/bs2.elf" "$OUT/bs2.o"
-"$LLVM_BIN/llvm-objcopy" -O binary "$OUT/bs2.elf" "$OUT/bs2.bin"
-python3 "$B2/pad_checksum" -s 0xffffffff "$OUT/bs2.bin" "$OUT/boot2.S"
+# ── 1. boot metadata ────────────────────────────────────────────────────────
+if [ "$BOARD" = "pico2" ]; then
+  # RP2350: no boot2. Assemble the pico-sdk IMAGE_DEF block loop (BSD) with clang;
+  # the bootrom scans it in the first 4 KB. glue/rp2350_blocks.S #includes the
+  # SDK's embedded_start/end_block.inc.S — its IMAGE_TYPE word is byte-identical
+  # to the SDK/picotool output (Arm-Secure EXE, RP2350).
+  C0="$PICO_SDK/src/rp2_common/pico_crt0"
+  BINC="-I$PICO_SDK/src/common/boot_picobin_headers/include -I$PICO_SDK/src/common/pico_base_headers/include \
+    -I$GEN -I$PICO_SDK/src/rp2350/hardware_regs/include -I$PICO_SDK/src/boards/include \
+    -I$PICO_SDK/src/rp2350/pico_platform/include -I$PICO_SDK/src/rp2_common/pico_platform_compiler/include \
+    -I$PICO_SDK/src/rp2_common/pico_platform_sections/include -I$PICO_SDK/src/rp2_common/pico_platform_panic/include \
+    -I$PICO_SDK/src/rp2350/hardware_structs/include -I$PICO_SDK/src/rp2_common/hardware_base/include -I$C0"
+  "$LLVM_BIN/clang" --target=$TRIPLE $CPU -nostdlib -DPICO_RP2350=1 -DLIB_PICO_PLATFORM=1 \
+    $BINC -c "$GLUE/rp2350_blocks.S" -o "$BOOTOBJ"
+else
+  # RP2040: boot2 (BSD) — assemble with clang, CRC32 via the SDK's pad_checksum.
+  B2="$PICO_SDK/src/rp2040/boot_stage2"
+  B2INC="-I$B2/include -I$B2/asminclude -I$PICO_SDK/src/rp2040/hardware_regs/include \
+    -I$PICO_SDK/src/rp2_common/hardware_base/include -I$PICO_SDK/src/common/pico_base_headers/include \
+    -I$PICO_SDK/src/boards/include -I$PICO_SDK/src/rp2040/pico_platform/include \
+    -I$PICO_SDK/src/rp2_common/pico_platform_compiler/include \
+    -I$PICO_SDK/src/rp2_common/pico_platform_panic/include \
+    -I$PICO_SDK/src/rp2_common/pico_platform_sections/include"
+  "$LLVM_BIN/clang" --target=$TRIPLE $CPU -nostdlib $B2INC -c "$B2/compile_time_choice.S" -o "$OUT/bs2.o"
+  "$LLVM_BIN/ld.lld" -T "$B2/boot_stage2.ld" --build-id=none -o "$OUT/bs2.elf" "$OUT/bs2.o"
+  "$LLVM_BIN/llvm-objcopy" -O binary "$OUT/bs2.elf" "$OUT/bs2.bin"
+  python3 "$B2/pad_checksum" -s 0xffffffff "$OUT/bs2.bin" "$OUT/boot2.S"
+  "$LLVM_BIN/clang" $CF -c "$OUT/boot2.S" -o "$BOOTOBJ"
+fi
 
 # ── 2. the real Arduino core + glue + sketch ────────────────────────────────
-"$LLVM_BIN/clang"   $CF -c "$OUT/boot2.S"        -o "$OUT/boot2.o"
-"$LLVM_BIN/clang"   $CF -c "$GLUE/startup.c"     -o "$OUT/startup.o"
+"$LLVM_BIN/clang"   $CF -c "$GLUE/startup.c" -o "$OUT/startup.o"
 for src in "$GLUE/platform.cpp" "$GLUE/cpp_support.cpp" "$SKETCH" \
            "$API/Common.cpp" "$API/Print.cpp" "$API/String.cpp" "$CORE/stdlib_noniso.cpp"; do
-  o="$OUT/$(basename "${src%.*}").o"
-  "$LLVM_BIN/clang++" $CF -std=gnu++17 -c "$src" -o "$o"
+  "$LLVM_BIN/clang++" $CF -std=gnu++17 -c "$src" -o "$OUT/$(basename "${src%.*}").o"
 done
 
 # ── 3. link into a bootable image + UF2 ─────────────────────────────────────
-"$LLVM_BIN/ld.lld" -T "$GLUE/link.ld" --gc-sections -o "$OUT/firmware.elf" \
-  "$OUT"/boot2.o "$OUT"/startup.o "$OUT"/platform.o "$OUT"/cpp_support.o \
+"$LLVM_BIN/ld.lld" -T "$LINK" --gc-sections -o "$OUT/firmware.elf" \
+  "$BOOTOBJ" "$OUT"/startup.o "$OUT"/platform.o "$OUT"/cpp_support.o \
   "$OUT/$(basename "${SKETCH%.*}").o" "$OUT"/Common.o "$OUT"/Print.o "$OUT"/String.o \
   "$OUT"/stdlib_noniso.o -L"$SR/lib" -lc "$SR/lib/libclang_rt.builtins.a"
 "$LLVM_BIN/llvm-objcopy" -O binary "$OUT/firmware.elf" "$OUT/firmware.bin"
-node "$(dirname "$0")/../../tools/pico-clang-wasm/bin2uf2.cjs" "$OUT/firmware.bin" 0xe48bff56 "$OUT/firmware.uf2"
-echo "=== bootable RP2040 firmware (clang) -> $OUT/firmware.uf2 ==="
+node "$(dirname "$0")/../../tools/pico-clang-wasm/bin2uf2.cjs" "$OUT/firmware.bin" $FAMILY "$OUT/firmware.uf2"
+echo "=== bootable $BOARD firmware (clang) -> $OUT/firmware.uf2 (family $FAMILY) ==="

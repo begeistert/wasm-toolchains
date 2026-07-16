@@ -18,11 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Arduino core** (ArduinoCore-API `Common`/`Print`/`String` and arduino-pico
   `stdlib_noniso.cpp`, clang-compiled) + a small permissive platform layer
   (`core/glue/`) over the RP2040 SIO/UART registers + picolibc + compiler-rt.
-  `src/pico-clang/build-core.sh` builds it; `tools/pico-clang-wasm/verify-core-boot.cjs`
-  proves the artifact is bootable (valid boot2 CRC + vector table). RP2350
-  (armv8-m.main) compiles and links the same core with clang (valid ELF), but a
-  *bootable* RP2350 image still needs the SDK's IMAGE_DEF block — see
-  `docs/CLANG_PICO.md`. Ships `lib/<board>/libcore-arduino-clang.a` in the bundle.
+  `src/pico-clang/build-core.sh` builds it (board-aware); `tools/pico-clang-wasm/
+  verify-core-boot.cjs` proves the artifact is bootable (valid boot2 CRC + vector
+  table). **RP2350 (Pico 2)** now also produces a bootable image: `core/glue/
+  rp2350_blocks.S` clang-assembles the pico-sdk **IMAGE_DEF block loop** (RP2350
+  has no boot2 — the bootrom scans the first 4 KB), placed by `link-rp2350.ld`;
+  `verify-core-boot-rp2350.cjs` validates the loop (marker `0xffffded3`, IMAGE_TYPE
+  `0x42` flags `0x1021` = EXE|Secure|Arm|RP2350, loop closes, family `0xe48bff59`).
+  The clang IMAGE_TYPE word is byte-identical (`0x10210142`) to the SDK's own —
+  *structurally validated, not hardware-booted* (no physical RP2350 here). Ships
+  `lib/<board>/libcore-arduino-clang.a` in the bundle.
   (Correction to the prior iteration: an SDK `pico_stdlib` blink reported as
   "clang-built" was actually `arm-none-eabi-gcc`; the bootable artifact here is
   genuinely clang-built and CRC-verified.)
